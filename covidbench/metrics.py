@@ -43,6 +43,25 @@ def sensitivity_at_capacity(y, p, capacity: float) -> float:
     return _expected_top_k_positives(y, p, k) / total_positives
 
 
+def score_table(y, p) -> list[dict]:
+    """Counts per distinct predicted score.
+
+    With at most 256 possible inputs this is a few KB, yet it is a sufficient
+    statistic: ROC, PR, calibration and sensitivity at any capacity can all be
+    reconstructed from it exactly, with no need to store per-row predictions.
+    """
+    grouped = (
+        pd.DataFrame({"y": np.asarray(y), "p": np.asarray(p, dtype=float)})
+        .groupby("p")["y"]
+        .agg(["size", "sum"])
+        .sort_index(ascending=False)
+    )
+    return [
+        {"p": float(score), "n": int(row["size"]), "pos": int(row["sum"])}
+        for score, row in grouped.iterrows()
+    ]
+
+
 def evaluate(y, p, capacity: float = config.DEFAULT_CAPACITY) -> dict:
     y = np.asarray(y)
     p = np.asarray(p, dtype=float)

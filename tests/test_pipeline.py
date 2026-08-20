@@ -1,10 +1,11 @@
 import zipfile
+from pathlib import Path
 
 import numpy as np
 import pytest
 
-from covidbench import config, data, registry
-from covidbench.metrics import evaluate, sensitivity_at_capacity
+from covidbench import config, data, plots, registry
+from covidbench.metrics import evaluate, score_table, sensitivity_at_capacity
 
 
 def _data_available() -> bool:
@@ -53,6 +54,50 @@ def test_evaluate_reports_score_granularity():
 def test_registry_discovers_models():
     assert "ceiling_lookup" in registry.available()
     assert "released_lgbm_all" in registry.available()
+
+
+def test_score_table_is_a_sufficient_statistic():
+    rng = np.random.default_rng(0)
+    p = rng.choice([0.1, 0.25, 0.4, 0.8], size=2000)
+    y = (rng.random(2000) < p).astype(int)
+
+    table = score_table(y, p)
+    assert sum(r["n"] for r in table) == len(y)
+    assert sum(r["pos"] for r in table) == int(y.sum())
+
+    # The curves the charts draw must match the metrics computed from raw predictions.
+    curve = plots._curve(table)
+    reconstructed_auc = float(np.trapezoid(curve["sensitivity"], curve["fpr"]))
+    assert reconstructed_auc == pytest.approx(evaluate(y, p)["roc_auc"], abs=1e-9)
+
+
+def test_charts_render(tmp_path):
+    payloads = [
+        {
+            "model": name,
+            "eval_split": "test_2020_04",
+            "metrics": {
+                "capacity": 0.1,
+                "prevalence": 0.08,
+                "roc_auc": 0.9,
+                "pr_auc": 0.65,
+                "brier": 0.07,
+                "sensitivity_at_capacity": sens,
+            },
+            "score_table": [
+                {"p": 0.8, "n": 100, "pos": 70},
+                {"p": 0.3, "n": 400, "pos": 90},
+                {"p": 0.05, "n": 1500, "pos": 40},
+            ],
+        }
+        for name, sens in (("ceiling_lookup", 0.75), ("logreg", 0.72))
+    ]
+
+    rendered = plots.render_all(payloads, payloads, tmp_path)
+    assert rendered
+    for chart in rendered:
+        written = tmp_path / Path(chart["file"]).name
+        assert written.is_file() and written.stat().st_size > 1000
 
 
 def test_zipped_csv_ignores_macosx_entries(tmp_path):
