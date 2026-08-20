@@ -7,6 +7,11 @@ from .. import config
 from ..registry import register
 
 
-@register("logreg", features=config.FEATURES_ALL, notes="Interpretable linear baseline")
+@register(
+    "logreg",
+    features=config.FEATURES_ALL,
+    notes="Interpretable linear baseline",
+    tracks=(config.COHORT_PAPER, config.COHORT_INCLUSIVE),
+)
 def logreg():
     return LogisticRegression(max_iter=1000, class_weight="balanced")

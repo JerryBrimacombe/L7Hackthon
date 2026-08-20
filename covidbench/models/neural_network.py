@@ -13,6 +13,7 @@ from ..registry import register
     "neural_network",
     features=config.FEATURES_ALL,
     notes="Small multilayer perceptron",
+    tracks=(config.COHORT_PAPER, config.COHORT_INCLUSIVE),
 )
 def neural_network():
     return make_pipeline(

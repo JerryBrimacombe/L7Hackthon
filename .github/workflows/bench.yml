@@ -46,7 +46,9 @@ jobs:
           COVIDPRED_ROOT: ${{ github.workspace }}/covidpred
         run: |
           python -m covidbench.run --all --eval-split test_2020_04
+          python -m covidbench.run --all --eval-split test_2020_04 --track inclusive
           python -m covidbench.run --all --eval-split shift_2020_11 --no-verify
+          python -m covidbench.run --all --eval-split shift_2020_11 --track inclusive --no-verify
           python -m covidbench.truth_table --model released_lgbm_all
           python -m covidbench.compare --html
 

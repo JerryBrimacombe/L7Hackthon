@@ -79,3 +79,94 @@ def evaluate(y, p, capacity: float = config.DEFAULT_CAPACITY) -> dict:
         "brier": float(brier_score_loss(y, p)),
         "distinct_scores": int(np.unique(p).size),
     }
+
+
+def _table_arrays(table: list[dict]) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    rows = sorted(table, key=lambda r: r["p"], reverse=True)
+    return (
+        np.array([r["p"] for r in rows], dtype=float),
+        np.array([r["n"] for r in rows], dtype=float),
+        np.array([r["pos"] for r in rows], dtype=float),
+    )
+
+
+def metrics_from_counts(n: np.ndarray, pos: np.ndarray, capacity: float) -> dict:
+    """Recompute the ranking metrics from per-score counts alone.
+
+    The score table is a sufficient statistic, so this returns the same numbers as
+    evaluate() without needing the per-row predictions.
+    """
+    total_n = float(n.sum())
+    total_pos = float(pos.sum())
+    total_neg = total_n - total_pos
+    if total_pos == 0 or total_neg == 0:
+        return {"roc_auc": float("nan"), "pr_auc": float("nan"), "sensitivity_at_capacity": float("nan")}
+
+    cum_n = np.concatenate([[0.0], np.cumsum(n)])
+    cum_pos = np.concatenate([[0.0], np.cumsum(pos)])
+
+    recall = cum_pos / total_pos
+    fpr = (cum_n - cum_pos) / total_neg
+    roc_auc = float(np.trapezoid(recall, fpr))
+
+    with np.errstate(invalid="ignore", divide="ignore"):
+        precision = np.divide(cum_pos, cum_n, out=np.zeros_like(cum_n), where=cum_n > 0)
+    # Average precision is the step-wise sum, matching sklearn rather than the trapezoid.
+    pr_auc = float(np.sum(np.diff(recall) * precision[1:]))
+
+    k = max(1, int(round(capacity * total_n)))
+    room = np.clip(k - cum_n[:-1], 0.0, n)
+    with np.errstate(invalid="ignore", divide="ignore"):
+        share = np.divide(room, n, out=np.zeros_like(n), where=n > 0)
+    sensitivity = float(np.sum(pos * share) / total_pos)
+
+    return {"roc_auc": roc_auc, "pr_auc": pr_auc, "sensitivity_at_capacity": sensitivity}
+
+
+def metrics_from_score_table(table: list[dict], capacity: float = config.DEFAULT_CAPACITY) -> dict:
+    _, n, pos = _table_arrays(table)
+    return metrics_from_counts(n, pos, capacity)
+
+
+def bootstrap_confidence_intervals(
+    table: list[dict],
+    capacity: float = config.DEFAULT_CAPACITY,
+    n_boot: int = 500,
+    alpha: float = 0.05,
+    seed: int = config.RANDOM_SEED,
+) -> dict:
+    """Percentile bootstrap intervals for the headline metrics.
+
+    Rows sharing a score are exchangeable, so resampling group sizes multinomially
+    and positives binomially is equivalent to resampling individual rows, but runs
+    in a few hundred operations instead of tens of thousands.
+    """
+    _, n, pos = _table_arrays(table)
+    total_n = int(n.sum())
+    if total_n == 0:
+        return {}
+
+    rng = np.random.default_rng(seed)
+    group_share = n / n.sum()
+    with np.errstate(invalid="ignore", divide="ignore"):
+        positive_rate = np.divide(pos, n, out=np.zeros_like(n), where=n > 0)
+
+    draws: dict[str, list[float]] = {"roc_auc": [], "pr_auc": [], "sensitivity_at_capacity": []}
+    for _ in range(n_boot):
+        n_draw = rng.multinomial(total_n, group_share).astype(float)
+        pos_draw = rng.binomial(n_draw.astype(int), positive_rate).astype(float)
+        sample = metrics_from_counts(n_draw, pos_draw, capacity)
+        for key, values in draws.items():
+            value = sample[key]
+            if not np.isnan(value):
+                values.append(value)
+
+    intervals = {}
+    for key, values in draws.items():
+        if not values:
+            continue
+        low, high = np.percentile(values, [100 * alpha / 2, 100 * (1 - alpha / 2)])
+        intervals[f"{key}_ci_low"] = float(low)
+        intervals[f"{key}_ci_high"] = float(high)
+    return intervals
+
