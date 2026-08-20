@@ -91,7 +91,9 @@ def _reliability(score_table: list[dict], bins: int = 10):
     return np.array(predicted), np.array(observed), np.array(weight)
 
 
-def sensitivity_vs_capacity(payloads: list[dict], path: Path) -> Path:
+def sensitivity_vs_capacity(
+    payloads: list[dict], path: Path, ceiling_model: str = CEILING_MODEL
+) -> Path:
     colours = _colours(p["model"] for p in payloads)
     fig, (full_ax, zoom_ax) = plt.subplots(1, 2, figsize=(11.5, 4.6))
     capacity = payloads[0]["metrics"]["capacity"]
@@ -100,7 +102,7 @@ def sensitivity_vs_capacity(payloads: list[dict], path: Path) -> Path:
         for payload in sorted(payloads, key=lambda p: p["model"]):
             name = payload["model"]
             curve = _curve(payload["score_table"])
-            is_ceiling = name == CEILING_MODEL
+            is_ceiling = name == ceiling_model
             ax.plot(
                 curve["capacity"],
                 curve["sensitivity"],
@@ -137,9 +139,9 @@ def sensitivity_vs_capacity(payloads: list[dict], path: Path) -> Path:
     return _save(fig, path)
 
 
-def ceiling_bars(payloads: list[dict], path: Path) -> Path:
+def ceiling_bars(payloads: list[dict], path: Path, ceiling_model: str = CEILING_MODEL) -> Path:
     ceiling = next(
-        (p["metrics"]["sensitivity_at_capacity"] for p in payloads if p["model"] == CEILING_MODEL),
+        (p["metrics"]["sensitivity_at_capacity"] for p in payloads if p["model"] == ceiling_model),
         None,
     )
     if not ceiling:
@@ -157,7 +159,7 @@ def ceiling_bars(payloads: list[dict], path: Path) -> Path:
     bars = ax.barh(
         names,
         values,
-        color=["black" if n == CEILING_MODEL else colours[n] for n in names],
+        color=["black" if n == ceiling_model else colours[n] for n in names],
         height=0.6,
     )
     for bar, value in zip(bars, values):
@@ -213,15 +215,15 @@ def shift_comparison(all_payloads: list[dict], path: Path) -> Path:
     return _save(fig, path)
 
 
-def pr_and_roc(payloads: list[dict], path: Path) -> Path:
+def pr_and_roc(payloads: list[dict], path: Path, ceiling_model: str = CEILING_MODEL) -> Path:
     colours = _colours(p["model"] for p in payloads)
     fig, (pr_ax, roc_ax) = plt.subplots(1, 2, figsize=(11, 4.6))
 
     for payload in sorted(payloads, key=lambda p: p["model"]):
         name = payload["model"]
         curve = _curve(payload["score_table"])
-        colour = "black" if name == CEILING_MODEL else colours[name]
-        style = "--" if name == CEILING_MODEL else "-"
+        colour = "black" if name == ceiling_model else colours[name]
+        style = "--" if name == ceiling_model else "-"
         label = f"{name} ({payload['metrics']['pr_auc']:.3f})"
         pr_ax.plot(curve["sensitivity"][1:], curve["precision"][1:], label=label, color=colour, linestyle=style, linewidth=1.4)
         roc_ax.plot(
@@ -251,7 +253,7 @@ def pr_and_roc(payloads: list[dict], path: Path) -> Path:
     return _save(fig, path)
 
 
-def calibration(payloads: list[dict], path: Path) -> Path:
+def calibration(payloads: list[dict], path: Path, ceiling_model: str = CEILING_MODEL) -> Path:
     colours = _colours(p["model"] for p in payloads)
     fig, ax = plt.subplots(figsize=(6.4, 5.6))
 
@@ -268,8 +270,8 @@ def calibration(payloads: list[dict], path: Path) -> Path:
             marker="o",
             markersize=4,
             linewidth=1.3,
-            color="black" if name == CEILING_MODEL else colours[name],
-            linestyle="--" if name == CEILING_MODEL else "-",
+            color="black" if name == ceiling_model else colours[name],
+            linestyle="--" if name == ceiling_model else "-",
             label=f"{name} (Brier {payload['metrics']['brier']:.4f})",
         )
 
@@ -313,19 +315,31 @@ CHARTS = [
 ]
 
 _RENDERERS = {
-    "sensitivity_capacity.png": lambda primary, everything, path: sensitivity_vs_capacity(primary, path),
-    "ceiling_bars.png": lambda primary, everything, path: ceiling_bars(primary, path),
-    "shift_comparison.png": lambda primary, everything, path: shift_comparison(everything, path),
-    "pr_roc.png": lambda primary, everything, path: pr_and_roc(primary, path),
-    "calibration.png": lambda primary, everything, path: calibration(primary, path),
+    "sensitivity_capacity.png": lambda primary, everything, path, ceiling: sensitivity_vs_capacity(primary, path, ceiling),
+    "ceiling_bars.png": lambda primary, everything, path, ceiling: ceiling_bars(primary, path, ceiling),
+    "shift_comparison.png": lambda primary, everything, path, ceiling: shift_comparison(everything, path),
+    "pr_roc.png": lambda primary, everything, path, ceiling: pr_and_roc(primary, path, ceiling),
+    "calibration.png": lambda primary, everything, path, ceiling: calibration(primary, path, ceiling),
 }
 
 
-def render_all(primary: list[dict], everything: list[dict], charts_dir: Path) -> list[dict]:
-    """Render every chart, skipping any that lack the data they need."""
+def render_all(
+    primary: list[dict],
+    everything: list[dict],
+    charts_dir: Path,
+    rel_prefix: str = "charts",
+    ceiling_model: str = CEILING_MODEL,
+) -> list[dict]:
+    """Render every chart, skipping any that lack the data they need.
+
+    `everything` must already be restricted to one track: a figure spanning tracks would
+    overlay two different populations on the same axes.
+    """
     rendered = []
     for filename, title, caption in CHARTS:
-        result = _RENDERERS[filename](primary, everything, charts_dir / filename)
+        result = _RENDERERS[filename](primary, everything, charts_dir / filename, ceiling_model)
         if result is not None:
-            rendered.append({"file": f"charts/{filename}", "title": title, "caption": caption})
+            rendered.append(
+                {"file": f"{rel_prefix}/{filename}", "title": title, "caption": caption}
+            )
     return rendered
