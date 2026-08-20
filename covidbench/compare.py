@@ -50,7 +50,7 @@ PAGE = """<!doctype html>
   <strong>Question and what we did</strong>
   <ul>
     <li>We asked whether a compact set of routine symptoms and demographic variables is sufficient to identify likely COVID-positive cases.</li>
-    <li>We replicated the original study, reconstructed the benchmark pipeline, and compared a transparent baseline with tree-based models on the same data.</li>
+    <li>We replicated the original study, reconstructed the benchmark pipeline, and compared a transparent baseline with tree-based and neural-network models on the same data.</li>
     <li>We then evaluated each model on screening performance, ranking quality, and calibration so the operational trade-offs are explicit.</li>
   </ul>
 </div>
@@ -64,6 +64,9 @@ PAGE = """<!doctype html>
 
 <h3>Random forest</h3>
 <p>Random forests provide a second tree-based benchmark. They help test whether an ensemble approach offers a more robust ranking of risk than a single boosted model, particularly when performance differences are less clear-cut across subgroups.</p>
+
+<h3>Neural network</h3>
+<p>The neural network is a deliberately small multilayer perceptron using the same eight binary features. Scaling, regularisation, early stopping, and a fixed random seed keep the comparison reproducible and reduce the risk of overfitting this compact feature space.</p>
 
 <h2>Model evaluation</h2>
 <p>We assess each model across three dimensions: screening performance when testing capacity is constrained, ranking performance across thresholds, and probability calibration. For a triage task, these are complementary views of the same problem rather than interchangeable ones.</p>
