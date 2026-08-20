@@ -1,0 +1,5 @@
+[tool.pytest.ini_options]
+# The `pytest` console script does not add the repo root to sys.path the way
+# `python -m pytest` does; without this, CI cannot import covidbench.
+pythonpath = ["."]
+testpaths = ["tests"]
