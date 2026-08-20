@@ -1,0 +1,72 @@
+name: benchmark
+
+on:
+  push:
+    branches: ['**']
+    paths-ignore: ['**.md']
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# head_ref on PRs, ref_name on pushes: collapses the duplicate run when a branch
+# with an open PR is pushed, so the older one is cancelled instead of both running.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.head_ref || github.ref_name }}
+  cancel-in-progress: true
+
+jobs:
+  benchmark:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check out covidpred data
+        uses: actions/checkout@v4
+        with:
+          repository: nshomron/covidpred
+          path: covidpred
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+          cache: pip
+
+      - run: pip install -r requirements.txt -r requirements-optional.txt
+
+      - run: pytest -q
+        env:
+          COVIDPRED_ROOT: ${{ github.workspace }}/covidpred
+
+      - name: Run benchmark
+        env:
+          COVIDPRED_ROOT: ${{ github.workspace }}/covidpred
+        run: |
+          python -m covidbench.run --all --eval-split test_2020_04
+          python -m covidbench.run --all --eval-split shift_2020_11 --no-verify
+          python -m covidbench.truth_table --model released_lgbm_all
+          python -m covidbench.compare --html
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: results
+          path: results/
+
+      - uses: actions/upload-pages-artifact@v3
+        if: github.ref == 'refs/heads/main'
+        with:
+          path: docs/
+
+  deploy:
+    needs: benchmark
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
