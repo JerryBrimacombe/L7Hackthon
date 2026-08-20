@@ -43,35 +43,35 @@ PAGE = """<!doctype html>
 <body>
 <h1>covidpred benchmark</h1>
 <p class="kicker">Clinical screening question</p>
-<p class="lede">Can we use simple symptoms and basic patient information to predict whether someone is likely to test positive for COVID-19?</p>
-<p class="lede">This benchmark asks that question directly. We compare a small set of routine inputs — symptom flags and basic demographics — against a simple empirical ceiling derived from the same eight binary features. Evaluation split: <strong>{split}</strong>.</p>
+<p class="lede">Can a small set of symptom and basic patient data help prioritise who should be tested for COVID-19?</p>
+<p class="lede">This benchmark answers that question directly by comparing simple symptom-based models against a strong empirical ceiling derived from the same eight binary features. Evaluation split: <strong>{split}</strong>.</p>
 
 <div class="panel">
   <strong>Question and what we did</strong>
   <ul>
-    <li>We asked whether a small set of routinely available symptoms and demographic variables is enough to prioritise likely COVID-positive cases.</li>
-    <li>We replicated the original study, rebuilt the benchmark pipeline, and compared baseline and tree-based methods on identical data.</li>
-    <li>We then evaluated each model using screening-oriented metrics, ranking metrics, and calibration metrics so the trade-offs are explicit.</li>
+    <li>We asked whether a compact set of routine symptoms and demographic variables is sufficient to identify likely COVID-positive cases.</li>
+    <li>We replicated the original study, reconstructed the benchmark pipeline, and compared a transparent baseline with tree-based models on the same data.</li>
+    <li>We then evaluated each model on screening performance, ranking quality, and calibration so the operational trade-offs are explicit.</li>
   </ul>
 </div>
 
 <h2>Baseline and model comparisons</h2>
 <h3>Logistic regression as baseline</h3>
-<p>Logistic regression is the natural starting point: it is interpretable, fast, and useful as a reference model. It shows how far a simple linear rule gets when we limit ourselves to the same symptom features that were available in the original study.</p>
+<p>Logistic regression is the natural baseline: it is simple, interpretable, and provides a useful reference point for how far a linear rule can go with the same symptom inputs.</p>
 
 <h3>XGBoost</h3>
-<p>XGBoost is the strongest non-linear benchmark here. It captures interactions between symptoms and demographic signals that a linear model cannot represent, but the gain is modest when the feature space is small and the data are already highly structured.</p>
+<p>XGBoost is the strongest nonlinear benchmark in this comparison. It captures interactions between symptoms and demographics that a linear model cannot represent, although the improvement is modest in a feature space this compact and highly structured.</p>
 
 <h3>Random forest</h3>
-<p>Random forests provide a second tree-based benchmark. They are useful for testing whether a bagged ensemble improves robustness and ranking performance relative to a single boosted model, especially when the data are noisy or less separable across subgroups.</p>
+<p>Random forests provide a second tree-based benchmark. They help test whether an ensemble approach offers a more robust ranking of risk than a single boosted model, particularly when performance differences are less clear-cut across subgroups.</p>
 
 <h2>Model evaluation</h2>
-<p>We compare the models using a mix of screening, ranking, and calibration metrics. The goal is not only to know which model has the highest AUC, but also which one is most useful when testing capacity is limited and false negatives are expensive.</p>
+<p>We assess each model across three dimensions: screening performance when testing capacity is constrained, ranking performance across thresholds, and probability calibration. For a triage task, these are complementary views of the same problem rather than interchangeable ones.</p>
 
 <div class="panel">
   <strong>Classification performance and ROC curves</strong>
   <ul>
-    <li>ROC curves show how well each model ranks positive cases relative to negatives across all thresholds.</li>
+    <li>ROC curves show how well each model separates positives from negatives across all thresholds.</li>
     <li>Precision-recall curves are especially informative here because COVID-19 positives are a minority class.</li>
     <li>Calibration plots show whether predicted probabilities are trustworthy or systematically over- or under-estimated.</li>
   </ul>
@@ -79,16 +79,16 @@ PAGE = """<!doctype html>
 
 <h2>Meaning behind the metrics</h2>
 <ul>
-  <li><strong>Sensitivity at capacity</strong>: fraction of true positive cases identified when only a limited proportion of people can be tested.</li>
-  <li><strong>ROC-AUC</strong>: overall ranking quality across thresholds; good for comparing discrimination, but not the same as a practical screening decision.</li>
-  <li><strong>PR-AUC</strong>: more relevant when positives are relatively uncommon and false positives are costly.</li>
-  <li><strong>Brier score</strong>: how well the predicted probabilities match observed outcomes; lower is better.</li>
-  <li><strong>% of ceiling</strong>: how close the model gets to the empirical best possible benchmark derived from the observed pattern rates.</li>
+  <li><strong>Sensitivity at capacity</strong>: the proportion of true positive cases identified when only a limited share of people can be tested.</li>
+  <li><strong>ROC-AUC</strong>: overall discrimination across thresholds; useful for comparing ranking quality, but not the same as a decision rule.</li>
+  <li><strong>PR-AUC</strong>: more relevant when positives are comparatively rare and false positives are costly.</li>
+  <li><strong>Brier score</strong>: how closely predicted probabilities match observed outcomes; lower values are better.</li>
+  <li><strong>% of ceiling</strong>: how close the model comes to the empirical best achievable benchmark derived from the observed pattern rates.</li>
 </ul>
 
 <h2>False positives and false negatives</h2>
-<p>For a screening task, the cost of errors matters as much as the headline score. A <strong>false negative</strong> means a person likely to be infected is missed and not prioritised for testing. A <strong>false positive</strong> means a lower-risk person is tested earlier than necessary, which wastes limited capacity.</p>
-<p>In practice, this is why sensitivity at a fixed testing budget is the main operating metric in this project: it reflects how many true cases are found when we have a constrained testing budget.</p>
+<p>For a screening tool, the cost of errors matters as much as the headline accuracy. A <strong>false negative</strong> means a likely infection is missed and not prioritised for testing. A <strong>false positive</strong> means a lower-risk person is escalated earlier than necessary, which consumes limited testing capacity.</p>
+<p>That is why sensitivity at a fixed testing budget is the central operating metric in this project: it reflects how many true cases are found when testing resources are constrained.</p>
 
 {table}
 
