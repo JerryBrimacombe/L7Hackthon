@@ -100,6 +100,17 @@ leaderboard.
 | Precision-recall and ROC | Side by side, showing PR separates models that ROC makes look identical |
 | Calibration | Equal-mass reliability curves against the diagonal |
 
+### Charts are rendered per track
+
+Each track gets its own chart set, drawn only from that track's results and highlighting that track's
+ceiling in black:
+
+- `docs/charts/` — the track chosen with `--track` (default `paper`)
+- `docs/charts/<track>/` — every other track with results, shown under *Other tracks* on the page
+
+This is not cosmetic. A single figure mixing tracks would overlay two different populations on the
+same axes, and the share-of-ceiling bars would be measured against the wrong ceiling entirely.
+
 The calibration chart earns its place: `xgboost` and `ceiling_lookup` sit on the diagonal, while
 `lgbm_retrained`, `logreg` and `released_lgbm_balanced` fall well below it — they systematically
 **over-predict risk**, a direct consequence of `is_unbalance=True` and `class_weight="balanced"`.

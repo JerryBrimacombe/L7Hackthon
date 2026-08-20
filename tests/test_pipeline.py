@@ -144,6 +144,48 @@ def test_charts_render(tmp_path):
         assert written.is_file() and written.stat().st_size > 1000
 
 
+def test_charts_use_the_ceiling_of_the_requested_track(tmp_path):
+    # ceiling_bars returns None when it cannot find the named ceiling, so this would
+    # silently drop a chart if a track's own ceiling were ignored.
+    payloads = [
+        {
+            "model": name,
+            "eval_split": "test_2020_04",
+            "metrics": {
+                "capacity": 0.1,
+                "prevalence": 0.08,
+                "roc_auc": 0.9,
+                "pr_auc": 0.65,
+                "brier": 0.07,
+                "sensitivity_at_capacity": sens,
+            },
+            "score_table": [
+                {"p": 0.8, "n": 100, "pos": 70},
+                {"p": 0.3, "n": 400, "pos": 90},
+                {"p": 0.05, "n": 1500, "pos": 40},
+            ],
+        }
+        for name, sens in (("ceiling_lookup_inclusive", 0.75), ("logreg", 0.72))
+    ]
+
+    rendered = plots.render_all(
+        payloads,
+        payloads,
+        tmp_path / "inclusive",
+        rel_prefix="charts/inclusive",
+        ceiling_model="ceiling_lookup_inclusive",
+    )
+    files = [c["file"] for c in rendered]
+    assert "charts/inclusive/ceiling_bars.png" in files
+    for chart in rendered:
+        assert chart["file"].startswith("charts/inclusive/")
+        assert (tmp_path / "inclusive" / Path(chart["file"]).name).is_file()
+
+    # The default ceiling is absent from these payloads, so that chart must be skipped.
+    default_files = [c["file"] for c in plots.render_all(payloads, payloads, tmp_path / "default")]
+    assert "charts/ceiling_bars.png" not in default_files
+
+
 def test_zipped_csv_ignores_macosx_entries(tmp_path):
     # Mirrors how covidpred ships the data: a zip that also contains __MACOSX cruft.
     archive = tmp_path / "sample.csv.zip"

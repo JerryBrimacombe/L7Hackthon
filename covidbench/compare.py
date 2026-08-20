@@ -397,13 +397,20 @@ def main() -> None:
     if not args.no_charts:
         plottable = [p for p in primary if p.get("score_table")]
         if plottable:
+            # Same track only: a figure spanning tracks would overlay two populations.
+            same_track = [
+                p
+                for p in everything
+                if p.get("score_table") and p.get("track", config.DEFAULT_TRACK) == args.track
+            ]
             rendered = plots.render_all(
                 plottable,
-                [p for p in everything if p.get("score_table")],
+                same_track,
                 config.DOCS_DIR / "charts",
+                ceiling_model=config.TRACKS[args.track]["ceiling"],
             )
             charts_html = "<h2>Charts</h2>\n" + "\n".join(FIGURE.format(**c) for c in rendered)
-            print(f"\nRendered {len(rendered)} charts")
+            print(f"\nRendered {len(rendered)} charts for track '{args.track}'")
         else:
             print("\nNo score_table in results; re-run covidbench.run to enable charts.")
 
@@ -431,14 +438,35 @@ def main() -> None:
             )
             + "\n"
         )
+
+        if args.no_charts:
+            continue
+        track_payloads = [
+            p
+            for p in everything
+            if p.get("score_table") and p.get("track", config.DEFAULT_TRACK) == track
+        ]
+        track_primary = [p for p in track_payloads if p["eval_split"] == args.eval_split]
+        if not track_primary:
+            continue
+        track_rendered = plots.render_all(
+            track_primary,
+            track_payloads,
+            config.DOCS_DIR / "charts" / track,
+            rel_prefix=f"charts/{track}",
+            ceiling_model=meta["ceiling"],
+        )
+        tracks_html += "\n".join(FIGURE.format(**c) for c in track_rendered) + "\n"
+        print(f"Rendered {len(track_rendered)} charts for track '{track}'")
+
     if tracks_html:
         tracks_html = (
             "<h2>Other tracks</h2>\n"
             "<div class=\"callout\"><strong>Do not compare across tracks.</strong> Each track is scored "
             "on a different set of people, so the denominators differ. A higher number in one track "
             "does not mean a better model than a lower number in another - it usually means an easier "
-            "or harder population. Each track has its own ceiling and its own <code>% of ceiling</code> "
-            "column for exactly this reason.</div>\n" + tracks_html
+            "or harder population. Each track has its own ceiling, its own charts and its own "
+            "<code>% of ceiling</code> column for exactly this reason.</div>\n" + tracks_html
         )
 
     html = PAGE.format(
