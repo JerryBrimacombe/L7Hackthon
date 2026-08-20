@@ -149,6 +149,9 @@ py -3.13 -m venv .venv
 # Benchmark everything on the paper's holdout week
 .\.venv\Scripts\python.exe -m covidbench.run --all
 
+# Run the small neural-network benchmark by itself
+.\.venv\Scripts\python.exe -m covidbench.run --model neural_network
+
 # Temporal shift test
 .\.venv\Scripts\python.exe -m covidbench.run --all --eval-split shift_2020_11 --no-verify
 
@@ -178,6 +181,7 @@ covidbench/
     ceiling_lookup.py   Empirical per-pattern rate (upper bound)
     lgbm_retrained.py   Retrained from published hyperparameters
     logreg.py           Interpretable linear benchmark
+    neural_network.py   Small MLP benchmark with early stopping
     xgboost_clf.py      Peer GBM sanity check
 tests/
   test_pipeline.py Cohort sizes, truth table, tie handling, zip loading, chart rendering

@@ -54,6 +54,7 @@ def test_evaluate_reports_score_granularity():
 def test_registry_discovers_models():
     assert "ceiling_lookup" in registry.available()
     assert "released_lgbm_all" in registry.available()
+    assert "neural_network" in registry.available()
 
 
 def test_score_table_is_a_sufficient_statistic():
