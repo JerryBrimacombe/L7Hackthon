@@ -55,6 +55,9 @@ def test_registry_discovers_models():
     assert "ceiling_lookup" in registry.available()
     assert "released_lgbm_all" in registry.available()
     assert "neural_network" in registry.available()
+    assert "random_forest" in registry.available()
+    assert "decision_tree" in registry.available()
+    assert "gaussian_nb" in registry.available()
 
 
 def test_score_table_is_a_sufficient_statistic():

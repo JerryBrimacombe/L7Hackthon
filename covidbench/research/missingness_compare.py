@@ -1,0 +1,61 @@
+"""Batch comparison over missingness policies in the research track."""
+from __future__ import annotations
+
+import argparse
+
+import pandas as pd
+
+from .. import config, registry
+from .random_split import run_model_random, write_result
+
+POLICIES = ["paper", "drop_any", "impute_mode", "keep_unknown_binary"]
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(description="Compare missingness policies for one or all models.")
+    parser.add_argument("--model", help="Model name; omit with --all")
+    parser.add_argument("--all", action="store_true", help="Run every registered model")
+    parser.add_argument("--dataset", default="v006", choices=list(config.DATASETS))
+    parser.add_argument("--test-size", type=float, default=0.15)
+    parser.add_argument("--seed", type=int, default=config.RANDOM_SEED)
+    parser.add_argument("--capacity", type=float, default=config.DEFAULT_CAPACITY)
+    args = parser.parse_args()
+
+    names = registry.available() if args.all else [args.model]
+    if not names or names == [None]:
+        parser.error("provide --model NAME or --all")
+
+    rows = []
+    for name in names:
+        for policy in POLICIES:
+            result = run_model_random(
+                name=name,
+                version=args.dataset,
+                missing_policy=policy,
+                test_size=args.test_size,
+                capacity=args.capacity,
+                seed=args.seed,
+            )
+            write_result(result)
+            metrics = result["metrics"]
+            rows.append(
+                {
+                    "model": name,
+                    "missing_policy": policy,
+                    "sensitivity_at_capacity": metrics["sensitivity_at_capacity"],
+                    "roc_auc": metrics["roc_auc"],
+                    "pr_auc": metrics["pr_auc"],
+                    "brier": metrics["brier"],
+                }
+            )
+
+    frame = pd.DataFrame(rows)
+    print(
+        frame.sort_values(["model", "sensitivity_at_capacity"], ascending=[True, False]).to_string(
+            index=False, float_format=lambda v: f"{v:.4f}"
+        )
+    )
+
+
+if __name__ == "__main__":
+    main()

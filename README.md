@@ -160,7 +160,31 @@ py -3.13 -m venv .venv
 
 # 256-row replication proof
 .\.venv\Scripts\python.exe -m covidbench.truth_table --model released_lgbm_all
+
+# Research track: random stratified split (separate from canonical temporal split)
+.\.venv\Scripts\python.exe -m covidbench.research.random_split --all --missing-policy paper
+
+# Research track: compare missingness policies side-by-side
+.\.venv\Scripts\python.exe -m covidbench.research.missingness_compare --all
+
+# Maintained EDA artifact (Markdown + chart)
+.\.venv\Scripts\python.exe -m covidbench.research.eda_report --dataset v006 --missing-policy paper
 ```
+
+### Temporal split vs random split
+
+- `Temporal split` (current canonical benchmark): train on March and evaluate on April/November.
+- `Random split` (research workflow): train and test on random stratified partitions from one pool.
+
+Why this matters:
+
+- Temporal split tests robustness to distribution shift and is closer to deployment reality.
+- Random split usually gives more optimistic metrics because train and test are drawn from the same period.
+
+Recommendation in this repo:
+
+- Keep `covidbench.run` as the canonical temporal benchmark so historical results remain comparable.
+- Use `covidbench.research.*` for random-split and preprocessing-policy experiments.
 
 ---
 
@@ -181,8 +205,16 @@ covidbench/
     ceiling_lookup.py   Empirical per-pattern rate (upper bound)
     lgbm_retrained.py   Retrained from published hyperparameters
     logreg.py           Interpretable linear benchmark
+    random_forest.py    Notebook baseline promoted to official benchmark model
+    decision_tree.py    Notebook baseline promoted to official benchmark model
+    gaussian_nb.py      Notebook baseline promoted to official benchmark model
     neural_network.py   Small MLP benchmark with early stopping
     xgboost_clf.py      Peer GBM sanity check
+  research/
+    profiles.py         Research-only missingness policy variants
+    random_split.py     Random stratified benchmark runner
+    missingness_compare.py Batch policy comparison helper
+    eda_report.py       Reproducible EDA artifacts for docs/research
 tests/
   test_pipeline.py Cohort sizes, truth table, tie handling, zip loading, chart rendering
 .github/workflows/
@@ -216,6 +248,9 @@ means every scikit-learn, XGBoost, CatBoost and InterpretML estimator conforms a
 class to inherit.
 
 Set `pretrained = True` on the returned object to skip fitting (used by the released artifacts).
+
+If the estimator exposes `coef_` or `feature_importances_`, `covidbench.run` now captures a compact
+explainability summary and `covidbench.compare --html` renders it in the report.
 
 Then:
 

@@ -99,6 +99,10 @@ PAGE = """<!doctype html>
 <p>These values describe the practical trade-off at the benchmark operating point: which cases are prioritised for testing, and what proportion of people are incorrectly flagged or missed.</p>
 {summary_table}
 
+<h3>Explainability summary</h3>
+<p>Model-specific directional coefficients or impurity-based feature importance, when available. Coefficients keep sign (risk up/down); importance values are non-directional magnitudes.</p>
+{explainability_table}
+
 <h3>Column meanings</h3>
 <ul>
   <li><strong>model</strong>: model name.</li>
@@ -233,6 +237,36 @@ def classification_summary(payloads: list[dict]) -> pd.DataFrame:
     return frame.sort_values("recall", ascending=False).reset_index(drop=True)
 
 
+def explainability_summary(payloads: list[dict], top_k: int = 3) -> pd.DataFrame:
+    rows: list[dict] = []
+    for payload in sorted(payloads, key=lambda p: p["model"]):
+        explainability = payload.get("explainability") or {}
+        method = explainability.get("method")
+        top_features = explainability.get("top_features") or []
+        if not method or not top_features:
+            rows.append({"model": payload["model"], "method": "n/a", "top_features": "n/a"})
+            continue
+
+        snippets: list[str] = []
+        for feature in top_features[:top_k]:
+            name = feature["feature"]
+            value = feature.get("value")
+            if value is None:
+                snippets.append(name)
+            else:
+                snippets.append(f"{name} ({value:+.4f})")
+
+        rows.append(
+            {
+                "model": payload["model"],
+                "method": method,
+                "top_features": ", ".join(snippets),
+            }
+        )
+
+    return pd.DataFrame(rows)
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Summarise benchmark results.")
     parser.add_argument("--eval-split", default=config.DEFAULT_EVAL_SPLIT)
@@ -247,6 +281,7 @@ def main() -> None:
 
     board = leaderboard(to_frame(primary))
     summary = classification_summary(primary)
+    explainability = explainability_summary(primary)
     print(board.to_string(index=False, float_format=lambda v: f"{v:.4f}"))
 
     if not args.html:
@@ -275,10 +310,17 @@ def main() -> None:
         classes="dataframe small-table",
     ) if not summary.empty else "<p>No classification summary available.</p>"
 
+    explainability_html = explainability.to_html(
+        index=False,
+        border=0,
+        classes="dataframe small-table",
+    ) if not explainability.empty else "<p>No explainability summary available.</p>"
+
     html = PAGE.format(
         split=args.eval_split,
         table=board.to_html(index=False, float_format=lambda v: f"{v:.4f}", border=0),
         summary_table=summary_html,
+        explainability_table=explainability_html,
         charts=charts_html,
         generated=max(p["timestamp"] for p in primary),
         n_models=len(primary),
