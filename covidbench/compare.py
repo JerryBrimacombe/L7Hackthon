@@ -43,6 +43,17 @@ that share of people can be tested. <em>% of ceiling</em> compares each model ag
 per-pattern positive rate, the best achievable score on these eight binary features.</p>
 {table}
 
+<h3>Column meanings</h3>
+<ul>
+  <li><strong>model</strong>: model name.</li>
+  <li><strong>sensitivity_at_capacity</strong>: true-positive rate (recall) when only the selected fraction of people can be tested. Higher is better.</li>
+  <li><strong>pct_of_ceiling</strong>: model sensitivity as a percentage of the empirical ceiling, where 100 means it reaches the lookup-table benchmark.</li>
+  <li><strong>roc_auc</strong>: area under the ROC curve; measures ranking quality across all thresholds.</li>
+  <li><strong>pr_auc</strong>: area under the precision-recall curve; often more informative when positives are rare.</li>
+  <li><strong>brier</strong>: Brier score for probability calibration; lower is better.</li>
+  <li><strong>distinct_scores</strong>: number of unique predicted scores. With eight binary inputs, there are at most 256 distinct score values.</li>
+</ul>
+
 {charts}
 
 <footer>Generated {generated} &middot; {n_models} models &middot; built by <code>covidbench.compare</code></footer>
