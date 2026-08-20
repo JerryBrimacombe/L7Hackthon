@@ -7,7 +7,12 @@ from .. import config
 from ..registry import register
 
 
-@register("random_forest", features=config.FEATURES_ALL, notes="Notebook baseline: random forest")
+@register(
+    "random_forest",
+    features=config.FEATURES_ALL,
+    notes="Notebook baseline: random forest",
+    tracks=(config.COHORT_PAPER, config.COHORT_INCLUSIVE),
+)
 def random_forest():
     return RandomForestClassifier(
         n_estimators=300,

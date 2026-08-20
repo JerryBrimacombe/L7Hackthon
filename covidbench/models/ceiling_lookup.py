@@ -30,6 +30,32 @@ class PatternLookup:
         return np.column_stack([1.0 - p, p])
 
 
-@register("ceiling_lookup", features=config.FEATURES_ALL, notes="Theoretical upper bound")
+@register(
+    "ceiling_lookup",
+    features=config.FEATURES_ALL,
+    notes="Theoretical upper bound",
+    tracks=(config.COHORT_PAPER,),
+)
 def ceiling_lookup():
     return PatternLookup(config.FEATURES_ALL)
+
+
+@register(
+    "ceiling_lookup_balanced",
+    features=config.FEATURES_BALANCED,
+    notes="Upper bound for the 5-feature balanced model",
+)
+def ceiling_lookup_balanced():
+    # released_lgbm_balanced only sees 5 features, so the 8-feature ceiling is not its bound.
+    return PatternLookup(config.FEATURES_BALANCED)
+
+
+@register(
+    "ceiling_lookup_inclusive",
+    features=config.FEATURES_INCLUSIVE,
+    notes="Upper bound for the inclusive 10-feature track",
+    tracks=(config.COHORT_INCLUSIVE,),
+)
+def ceiling_lookup_inclusive():
+    # 1024 patterns over a different population: not comparable to the 8-feature ceiling.
+    return PatternLookup(config.FEATURES_INCLUSIVE)

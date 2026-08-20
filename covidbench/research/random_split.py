@@ -14,7 +14,7 @@ from sklearn.model_selection import train_test_split
 from .. import config, registry
 from ..explainability import summarize as explainability_summary
 from ..metrics import evaluate, score_table
-from .profiles import build_profile
+from .profiles import INDICATOR_FEATURES, POLICIES, build_profile
 
 
 def run_model_random(
@@ -24,11 +24,16 @@ def run_model_random(
     test_size: float,
     capacity: float,
     seed: int,
+    with_indicators: bool = False,
 ) -> dict:
     spec = registry.get(name)
     features = list(spec.features)
 
-    frame = build_profile(version=version, missing_policy=missing_policy)
+    frame = build_profile(
+        version=version, missing_policy=missing_policy, with_indicators=with_indicators
+    )
+    if with_indicators:
+        features += INDICATOR_FEATURES
     X = frame[features]
     y = frame[config.TARGET].to_numpy()
 
@@ -52,6 +57,7 @@ def run_model_random(
         "dataset_version": version,
         "split_strategy": "random_stratified",
         "missing_policy": missing_policy,
+        "with_indicators": with_indicators,
         "seed": seed,
         "test_size": test_size,
         "timestamp": datetime.now(timezone.utc).isoformat(timespec="seconds"),
@@ -77,10 +83,11 @@ def main() -> None:
     parser.add_argument("--model", help="Model name; omit with --all")
     parser.add_argument("--all", action="store_true", help="Run every registered model")
     parser.add_argument("--dataset", default="v006", choices=list(config.DATASETS))
+    parser.add_argument("--missing-policy", default="paper", choices=list(POLICIES))
     parser.add_argument(
-        "--missing-policy",
-        default="paper",
-        choices=["paper", "drop_any", "impute_mode", "keep_unknown_binary"],
+        "--with-indicators",
+        action="store_true",
+        help="Add explicit Age_60_unknown / Gender_unknown features",
     )
     parser.add_argument("--test-size", type=float, default=0.15)
     parser.add_argument("--seed", type=int, default=config.RANDOM_SEED)
@@ -105,6 +112,7 @@ def main() -> None:
             test_size=args.test_size,
             capacity=args.capacity,
             seed=args.seed,
+            with_indicators=args.with_indicators,
         )
         metrics = result["metrics"]
         print(

@@ -7,6 +7,7 @@ import json
 import pandas as pd
 
 from . import config, plots
+from .metrics import bootstrap_confidence_intervals
 
 CEILING_MODEL = "ceiling_lookup"
 
@@ -44,7 +45,17 @@ PAGE = """<!doctype html>
 <h1>covidpred benchmark</h1>
 <p class="kicker">Clinical screening question</p>
 <p class="lede">Can a small set of symptom and basic patient data help prioritise who should be tested for COVID-19?</p>
-<p class="lede">This benchmark answers that question directly by comparing simple symptom-based models against a strong empirical ceiling derived from the same eight binary features. Evaluation split: <strong>{split}</strong>.</p>
+<p class="lede">This benchmark answers that question directly by comparing simple symptom-based models against a strong empirical ceiling derived from the same eight binary features. Evaluation split: <strong>{split}</strong>. Track: <strong>{track}</strong> ({track_label}).</p>
+
+<div class="panel">
+  <strong>Why there are two tracks</strong>
+  <ul>
+    <li>The source data records age and gender as <code>None</code> for a large share of people. How you treat those rows changes <em>who is in the cohort at all</em>, not just how a feature is encoded.</li>
+    <li><strong>paper</strong> drops them. That is what the published study did, so it is the only track that can claim replication - but it throws information away.</li>
+    <li><strong>inclusive</strong> keeps them and adds explicit <code>Age_60_unknown</code> / <code>Gender_unknown</code> features, so a model can distinguish "recorded as under 60" from "not recorded".</li>
+    <li>The two tracks score different people, so they each carry their own ceiling and are never ranked against one another.</li>
+  </ul>
+</div>
 
 <div class="panel">
   <strong>Question and what we did</strong>
@@ -107,8 +118,10 @@ PAGE = """<!doctype html>
 <ul>
   <li><strong>model</strong>: model name.</li>
   <li><strong>sensitivity_at_capacity</strong>: true-positive rate (recall) when only the selected fraction of people can be tested. Higher is better.</li>
+  <li><strong>sens_ci</strong>: 95% percentile bootstrap interval for sensitivity at capacity. Overlapping intervals mean the models are not distinguishable on this data.</li>
   <li><strong>pct_of_ceiling</strong>: model sensitivity as a percentage of the empirical ceiling, where 100 means it reaches the lookup-table benchmark.</li>
   <li><strong>roc_auc</strong>: area under the ROC curve; measures ranking quality across all thresholds.</li>
+  <li><strong>roc_auc_ci</strong>: 95% percentile bootstrap interval for ROC-AUC.</li>
   <li><strong>pr_auc</strong>: area under the precision-recall curve; often more informative when positives are rare.</li>
   <li><strong>brier</strong>: Brier score for probability calibration; lower is better.</li>
   <li><strong>distinct_scores</strong>: number of unique predicted scores. With eight binary inputs, there are at most 256 distinct score values.</li>
@@ -125,10 +138,16 @@ PAGE = """<!doctype html>
 </div>
 
 <div class="callout">
+  <strong>Read the intervals, not the ordering.</strong> Several models sit within a fraction of a percentage point of each other. Where the bootstrap intervals overlap, the leaderboard ordering is not evidence that one model is better than another - it reflects sampling noise on a single evaluation week.
+</div>
+
+<div class="callout">
   <strong>Caveat.</strong> The lookup-table ceiling is the <em>in-sample</em> optimum, not a strict out-of-sample bound. Only a subset of patterns seen in the holdout week are present in training, so unseen or sparse patterns fall back to the overall prior. That is why a model can appear to slightly exceed 100% of ceiling in finite data.
 </div>
 
 {charts}
+
+{tracks_section}
 
 <footer>Generated {generated} &middot; {n_models} models &middot; built by <code>covidbench.compare</code></footer>
 </body>
@@ -143,13 +162,15 @@ FIGURE = """<figure>
 
 
 def load_payloads(eval_split: str | None = None) -> list[dict]:
-    """Latest result per (model, eval_split), optionally filtered to one split."""
-    payloads: dict[tuple[str, str], dict] = {}
+    """Latest result per (model, track, eval_split), optionally filtered to one split."""
+    payloads: dict[tuple[str, str, str], dict] = {}
     for path in sorted(config.RESULTS_DIR.glob("*.json")):
         payload = json.loads(path.read_text(encoding="utf-8"))
         if eval_split and payload["eval_split"] != eval_split:
             continue
-        key = (payload["model"], payload["eval_split"])
+        # Results written before tracks existed are all published-cohort runs.
+        payload.setdefault("track", config.DEFAULT_TRACK)
+        key = (payload["model"], payload["track"], payload["eval_split"])
         if key not in payloads or payload["timestamp"] >= payloads[key]["timestamp"]:
             payloads[key] = payload
     if not payloads:
@@ -162,6 +183,7 @@ def to_frame(payloads: list[dict]) -> pd.DataFrame:
         [
             {
                 "model": p["model"],
+                "track": p.get("track", config.DEFAULT_TRACK),
                 "eval_split": p["eval_split"],
                 "timestamp": p["timestamp"],
                 **p["metrics"],
@@ -171,14 +193,49 @@ def to_frame(payloads: list[dict]) -> pd.DataFrame:
     )
 
 
-def leaderboard(frame: pd.DataFrame) -> pd.DataFrame:
+def leaderboard(frame: pd.DataFrame, track: str = config.DEFAULT_TRACK) -> pd.DataFrame:
     board = frame.sort_values("sensitivity_at_capacity", ascending=False).copy()
-    ceiling = board.loc[board["model"] == CEILING_MODEL, "sensitivity_at_capacity"]
+    ceiling_model = config.TRACKS[track]["ceiling"]
+    ceiling = board.loc[board["model"] == ceiling_model, "sensitivity_at_capacity"]
     if not ceiling.empty and ceiling.iloc[0] > 0:
         board["pct_of_ceiling"] = 100 * board["sensitivity_at_capacity"] / ceiling.iloc[0]
-    columns = ["model", "sensitivity_at_capacity", "pct_of_ceiling", "roc_auc",
-               "pr_auc", "brier", "distinct_scores"]
+    columns = ["model", "sensitivity_at_capacity", "sens_ci", "pct_of_ceiling", "roc_auc",
+               "roc_auc_ci", "pr_auc", "brier", "distinct_scores"]
     return board[[c for c in columns if c in board.columns]]
+
+
+def add_confidence_intervals(
+    frame: pd.DataFrame, payloads: list[dict], n_boot: int
+) -> pd.DataFrame:
+    """Attach percentile bootstrap intervals so near-identical models are not over-read."""
+    by_model = {p["model"]: p for p in payloads}
+    sens_text: list[str] = []
+    roc_text: list[str] = []
+
+    for model in frame["model"]:
+        payload = by_model.get(model, {})
+        table = payload.get("score_table")
+        if not table:
+            sens_text.append("")
+            roc_text.append("")
+            continue
+        capacity = float(payload["metrics"].get("capacity", config.DEFAULT_CAPACITY))
+        intervals = bootstrap_confidence_intervals(table, capacity=capacity, n_boot=n_boot)
+        sens_text.append(
+            f"{intervals['sensitivity_at_capacity_ci_low']:.4f}-{intervals['sensitivity_at_capacity_ci_high']:.4f}"
+            if "sensitivity_at_capacity_ci_low" in intervals
+            else ""
+        )
+        roc_text.append(
+            f"{intervals['roc_auc_ci_low']:.4f}-{intervals['roc_auc_ci_high']:.4f}"
+            if "roc_auc_ci_low" in intervals
+            else ""
+        )
+
+    frame = frame.copy()
+    frame["sens_ci"] = sens_text
+    frame["roc_auc_ci"] = roc_text
+    return frame
 
 
 def classification_summary(payloads: list[dict]) -> pd.DataFrame:
@@ -270,19 +327,66 @@ def explainability_summary(payloads: list[dict], top_k: int = 3) -> pd.DataFrame
 def main() -> None:
     parser = argparse.ArgumentParser(description="Summarise benchmark results.")
     parser.add_argument("--eval-split", default=config.DEFAULT_EVAL_SPLIT)
+    parser.add_argument(
+        "--track",
+        default=config.DEFAULT_TRACK,
+        choices=list(config.TRACKS),
+        help="Track whose leaderboard and charts are the headline ones",
+    )
     parser.add_argument("--html", action="store_true", help="Also write docs/index.html")
     parser.add_argument("--no-charts", action="store_true", help="Skip chart rendering")
+    parser.add_argument("--no-ci", action="store_true", help="Skip bootstrap confidence intervals")
+    parser.add_argument("--n-boot", type=int, default=500, help="Bootstrap resamples per model")
     args = parser.parse_args()
 
     everything = load_payloads()
-    primary = [p for p in everything if p["eval_split"] == args.eval_split]
+    primary = [
+        p
+        for p in everything
+        if p["eval_split"] == args.eval_split and p.get("track", config.DEFAULT_TRACK) == args.track
+    ]
     if not primary:
-        raise SystemExit(f"No results for split '{args.eval_split}'.")
+        raise SystemExit(f"No results for split '{args.eval_split}' on track '{args.track}'.")
 
-    board = leaderboard(to_frame(primary))
+    frame = to_frame(primary)
+    if not args.no_ci:
+        frame = add_confidence_intervals(frame, primary, args.n_boot)
+    board = leaderboard(frame, args.track)
     summary = classification_summary(primary)
     explainability = explainability_summary(primary)
+
+    print(f"=== track: {args.track} - {config.TRACKS[args.track]['label']} ===")
     print(board.to_string(index=False, float_format=lambda v: f"{v:.4f}"))
+
+    # Other tracks are scored on a different population, so they get their own table.
+    other_tracks = sorted(
+        {
+            p.get("track", config.DEFAULT_TRACK)
+            for p in everything
+            if p["eval_split"] == args.eval_split
+        }
+        - {args.track}
+    )
+    other_boards: list[tuple[str, pd.DataFrame]] = []
+    for track in other_tracks:
+        rows = [
+            p
+            for p in everything
+            if p["eval_split"] == args.eval_split and p.get("track", config.DEFAULT_TRACK) == track
+        ]
+        other_frame = to_frame(rows)
+        if not args.no_ci:
+            other_frame = add_confidence_intervals(other_frame, rows, args.n_boot)
+        other_board = leaderboard(other_frame, track)
+        other_boards.append((track, other_board))
+        print(f"\n=== track: {track} - {config.TRACKS[track]['label']} ===")
+        print(other_board.to_string(index=False, float_format=lambda v: f"{v:.4f}"))
+
+    if other_boards:
+        print(
+            "\nTracks are scored on different cohorts. Compare models within a track;"
+            " never read one track's numbers against another's."
+        )
 
     if not args.html:
         return
@@ -316,8 +420,32 @@ def main() -> None:
         classes="dataframe small-table",
     ) if not explainability.empty else "<p>No explainability summary available.</p>"
 
+    tracks_html = ""
+    for track, other_board in other_boards:
+        meta = config.TRACKS[track]
+        tracks_html += (
+            f"<h3>{track} - {meta['label']}</h3>\n"
+            f"<p>{meta['why']}</p>\n"
+            + other_board.to_html(
+                index=False, float_format=lambda v: f"{v:.4f}", border=0, classes="dataframe small-table"
+            )
+            + "\n"
+        )
+    if tracks_html:
+        tracks_html = (
+            "<h2>Other tracks</h2>\n"
+            "<div class=\"callout\"><strong>Do not compare across tracks.</strong> Each track is scored "
+            "on a different set of people, so the denominators differ. A higher number in one track "
+            "does not mean a better model than a lower number in another - it usually means an easier "
+            "or harder population. Each track has its own ceiling and its own <code>% of ceiling</code> "
+            "column for exactly this reason.</div>\n" + tracks_html
+        )
+
     html = PAGE.format(
         split=args.eval_split,
+        track=args.track,
+        track_label=config.TRACKS[args.track]["label"],
+        tracks_section=tracks_html,
         table=board.to_html(index=False, float_format=lambda v: f"{v:.4f}", border=0),
         summary_table=summary_html,
         explainability_table=explainability_html,

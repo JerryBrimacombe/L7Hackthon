@@ -7,7 +7,7 @@ from pathlib import Path
 import matplotlib.pyplot as plt
 
 from .. import config
-from .profiles import build_profile
+from .profiles import POLICIES, build_profile
 
 
 def _symptom_positive_rate_table(frame):
@@ -73,11 +73,7 @@ def render_symptom_chart(version: str, missing_policy: str, out_path: Path) -> N
 def main() -> None:
     parser = argparse.ArgumentParser(description="Generate maintained EDA report artifacts.")
     parser.add_argument("--dataset", default="v006", choices=list(config.DATASETS))
-    parser.add_argument(
-        "--missing-policy",
-        default="paper",
-        choices=["paper", "drop_any", "impute_mode", "keep_unknown_binary"],
-    )
+    parser.add_argument("--missing-policy", default="paper", choices=list(POLICIES))
     args = parser.parse_args()
 
     out_dir = config.DOCS_DIR / "research"

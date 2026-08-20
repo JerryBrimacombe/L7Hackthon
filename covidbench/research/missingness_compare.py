@@ -6,9 +6,8 @@ import argparse
 import pandas as pd
 
 from .. import config, registry
+from .profiles import POLICIES
 from .random_split import run_model_random, write_result
-
-POLICIES = ["paper", "drop_any", "impute_mode", "keep_unknown_binary"]
 
 
 def main() -> None:
@@ -19,6 +18,11 @@ def main() -> None:
     parser.add_argument("--test-size", type=float, default=0.15)
     parser.add_argument("--seed", type=int, default=config.RANDOM_SEED)
     parser.add_argument("--capacity", type=float, default=config.DEFAULT_CAPACITY)
+    parser.add_argument(
+        "--with-indicators",
+        action="store_true",
+        help="Add explicit Age_60_unknown / Gender_unknown features",
+    )
     args = parser.parse_args()
 
     names = registry.available() if args.all else [args.model]
@@ -35,6 +39,7 @@ def main() -> None:
                 test_size=args.test_size,
                 capacity=args.capacity,
                 seed=args.seed,
+                with_indicators=args.with_indicators,
             )
             write_result(result)
             metrics = result["metrics"]
@@ -42,6 +47,8 @@ def main() -> None:
                 {
                     "model": name,
                     "missing_policy": policy,
+                    "rows_scored": metrics["n"],
+                    "prevalence": metrics["prevalence"],
                     "sensitivity_at_capacity": metrics["sensitivity_at_capacity"],
                     "roc_auc": metrics["roc_auc"],
                     "pr_auc": metrics["pr_auc"],
@@ -54,6 +61,12 @@ def main() -> None:
         frame.sort_values(["model", "sensitivity_at_capacity"], ascending=[True, False]).to_string(
             index=False, float_format=lambda v: f"{v:.4f}"
         )
+    )
+    # Prevalence moves with the policy, so sensitivity at a fixed capacity is not
+    # comparable across rows with different prevalence.
+    print(
+        "\nNote: cohort size and prevalence change with the policy, so compare within a"
+        " policy first and treat cross-policy gaps as descriptive, not as a ranking."
     )
 
 

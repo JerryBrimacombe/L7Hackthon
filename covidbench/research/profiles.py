@@ -10,91 +10,91 @@ import pandas as pd
 from .. import config, data
 
 SYMPTOMS = ["cough", "fever", "sore_throat", "shortness_of_breath", "head_ache"]
+DEMOGRAPHICS = ["age_60_and_above", "gender"]
+POLICIES = ("paper", "drop_any", "impute_mode", "keep_unknown_binary")
+
+# Extra columns for the variant that treats "unknown" as a state rather than a 0.
+# Same names as the canonical inclusive track, so results stay comparable to it.
+INDICATOR_FEATURES = config.INDICATOR_FEATURES
+
+# The source CSV spells missing values as the literal string "None", and the loader
+# reads with keep_default_na=False, so nothing is NaN until we convert it here.
+MISSING_SENTINELS = ["None", ""]
+
+
+def _load_labelled(version: str) -> pd.DataFrame:
+    """Positive/negative rows only, with the sentinel strings turned into real NA."""
+    raw = data.load_raw(version)
+    frame = raw[raw["corona_result"].isin(["positive", "negative"])].copy()
+    return frame.replace({sentinel: pd.NA for sentinel in MISSING_SENTINELS})
 
 
 def _to_binary_features(frame: pd.DataFrame) -> pd.DataFrame:
     out = pd.DataFrame(index=frame.index)
-    out["Cough"] = pd.to_numeric(frame["cough"], errors="coerce")
-    out["Fever"] = pd.to_numeric(frame["fever"], errors="coerce")
-    out["Sore_throat"] = pd.to_numeric(frame["sore_throat"], errors="coerce")
-    out["Shortness_of_breath"] = pd.to_numeric(frame["shortness_of_breath"], errors="coerce")
-    out["Headache"] = pd.to_numeric(frame["head_ache"], errors="coerce")
-    out["Age_60_plus"] = (frame["age_60_and_above"] == "Yes").astype(float)
-    out["Male"] = (frame["gender"] == "male").astype(float)
+    for source, target in zip(SYMPTOMS, config.FEATURES_ALL[:5]):
+        out[target] = pd.to_numeric(frame[source], errors="coerce")
+    out["Age_60_plus"] = frame["age_60_and_above"].eq("Yes").fillna(False).astype(int)
+    out["Male"] = frame["gender"].eq("male").fillna(False).astype(int)
     out["Contact_with_confirmed"] = (
-        frame["test_indication"] == "Contact with confirmed"
-    ).astype(float)
-    out["label"] = (frame["corona_result"] == "positive").astype(int)
+        frame["test_indication"].eq("Contact with confirmed").fillna(False).astype(int)
+    )
+    out[config.TARGET] = (frame["corona_result"] == "positive").astype(int)
     out["test_date"] = frame["test_date"]
     return out
 
 
-def build_profile(version: str = "v006", missing_policy: str = "paper") -> pd.DataFrame:
-    """Build a research cohort with an explicit missingness policy.
+def build_profile(
+    version: str = "v006",
+    missing_policy: str = "paper",
+    with_indicators: bool = False,
+) -> pd.DataFrame:
+    """Build a research cohort under an explicit missing-value assumption.
 
     Policies:
-    - paper: canonical behavior (drop missing demographics, symptoms -> 0)
-    - drop_any: drop rows with missing age/gender/symptoms
-    - impute_mode: impute age/gender/symptoms with training-set mode proxies
-    - keep_unknown_binary: keep missing demographics, map unknown to 0 side
-    """
-    raw = data.load_raw(version)
-    frame = raw[raw["corona_result"].isin(["positive", "negative"])].copy()
+    - paper: the canonical benchmark cohort (drop missing demographics, symptoms -> 0)
+    - drop_any: drop rows missing any symptom or demographic
+    - impute_mode: fill missing symptoms and demographics with the observed mode
+    - keep_unknown_binary: retain rows with unknown demographics, encoding unknown as 0
 
-    if missing_policy == "paper":
-        frame = frame[
-            frame["age_60_and_above"].isin(["Yes", "No"]) & frame["gender"].isin(["male", "female"])
-        ].copy()
-        encoded = _to_binary_features(frame)
-        encoded[["Cough", "Fever", "Sore_throat", "Shortness_of_breath", "Headache"]] = (
-            encoded[["Cough", "Fever", "Sore_throat", "Shortness_of_breath", "Headache"]]
-            .fillna(0)
-            .astype(int)
+    with_indicators adds explicit `*_unknown` columns. They are constant zero for the
+    policies that remove or impute unknown rows, and only informative alongside
+    keep_unknown_binary.
+    """
+    if missing_policy not in POLICIES:
+        raise ValueError(
+            f"Unknown missing_policy '{missing_policy}'. Use one of: {', '.join(POLICIES)}."
         )
-        encoded[["Age_60_plus", "Male", "Contact_with_confirmed"]] = encoded[
-            ["Age_60_plus", "Male", "Contact_with_confirmed"]
-        ].astype(int)
-        return encoded.reset_index(drop=True)
+
+    # Delegate rather than re-implement, so this variant can never drift from the benchmark.
+    if missing_policy == "paper":
+        cohort = data.build_cohort(version).copy()
+        if with_indicators:
+            for column in INDICATOR_FEATURES:
+                cohort[column] = 0
+        return cohort
+
+    frame = _load_labelled(version)
+    unknown_age = frame["age_60_and_above"].isna().to_numpy()
+    unknown_gender = frame["gender"].isna().to_numpy()
 
     if missing_policy == "drop_any":
-        frame = frame.dropna(subset=SYMPTOMS + ["age_60_and_above", "gender"]).copy()
-        frame = frame[
-            frame["age_60_and_above"].isin(["Yes", "No"]) & frame["gender"].isin(["male", "female"])
-        ].copy()
-        encoded = _to_binary_features(frame)
-        for col in config.FEATURES_ALL:
-            encoded[col] = encoded[col].astype(int)
-        return encoded.reset_index(drop=True)
+        keep = ~(frame[SYMPTOMS + DEMOGRAPHICS].isna().any(axis=1)).to_numpy()
+        frame = frame[keep]
+        unknown_age, unknown_gender = unknown_age[keep], unknown_gender[keep]
+    elif missing_policy == "impute_mode":
+        for column in SYMPTOMS + DEMOGRAPHICS:
+            mode = frame[column].mode(dropna=True)
+            if not mode.empty:
+                frame[column] = frame[column].fillna(mode.iloc[0])
 
-    if missing_policy == "impute_mode":
-        age_mode = frame["age_60_and_above"].mode(dropna=True)
-        gender_mode = frame["gender"].mode(dropna=True)
-        frame["age_60_and_above"] = frame["age_60_and_above"].fillna(age_mode.iloc[0] if not age_mode.empty else "No")
-        frame["gender"] = frame["gender"].fillna(gender_mode.iloc[0] if not gender_mode.empty else "female")
-        for symptom in SYMPTOMS:
-            symptom_mode = frame[symptom].mode(dropna=True)
-            fill = symptom_mode.iloc[0] if not symptom_mode.empty else "0"
-            frame[symptom] = frame[symptom].fillna(fill)
-        encoded = _to_binary_features(frame)
-        for col in config.FEATURES_ALL:
-            encoded[col] = encoded[col].fillna(0).astype(int)
-        return encoded.reset_index(drop=True)
+    encoded = _to_binary_features(frame)
+    symptom_features = config.FEATURES_ALL[:5]
+    encoded[symptom_features] = encoded[symptom_features].fillna(0).astype(int)
 
-    if missing_policy == "keep_unknown_binary":
-        frame["age_60_and_above"] = frame["age_60_and_above"].fillna("Unknown")
-        frame["gender"] = frame["gender"].fillna("Unknown")
-        encoded = _to_binary_features(frame)
-        encoded[["Cough", "Fever", "Sore_throat", "Shortness_of_breath", "Headache"]] = (
-            encoded[["Cough", "Fever", "Sore_throat", "Shortness_of_breath", "Headache"]]
-            .fillna(0)
-            .astype(int)
-        )
-        encoded[["Age_60_plus", "Male", "Contact_with_confirmed"]] = encoded[
-            ["Age_60_plus", "Male", "Contact_with_confirmed"]
-        ].astype(int)
-        return encoded.reset_index(drop=True)
+    if with_indicators:
+        # Imputation deliberately erases the distinction, so the flags are zero there.
+        blank = missing_policy == "impute_mode"
+        encoded["Age_60_unknown"] = 0 if blank else unknown_age.astype(int)
+        encoded["Gender_unknown"] = 0 if blank else unknown_gender.astype(int)
 
-    raise ValueError(
-        f"Unknown missing_policy '{missing_policy}'. "
-        "Use one of: paper, drop_any, impute_mode, keep_unknown_binary."
-    )
+    return encoded.reset_index(drop=True)

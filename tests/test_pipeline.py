@@ -1,11 +1,19 @@
+import importlib.util
 import zipfile
 from pathlib import Path
 
 import numpy as np
+import pandas as pd
 import pytest
 
 from covidbench import config, data, plots, registry
-from covidbench.metrics import evaluate, score_table, sensitivity_at_capacity
+from covidbench.metrics import (
+    bootstrap_confidence_intervals,
+    evaluate,
+    metrics_from_score_table,
+    score_table,
+    sensitivity_at_capacity,
+)
 
 
 def _data_available() -> bool:
@@ -16,7 +24,13 @@ def _data_available() -> bool:
         return False
 
 
+def _module_available(name: str) -> bool:
+    return importlib.util.find_spec(name) is not None
+
+
 needs_data = pytest.mark.skipif(not _data_available(), reason="covidpred data not present")
+# The registry skips models whose library is missing; the tests should agree.
+needs_lightgbm = pytest.mark.skipif(not _module_available("lightgbm"), reason="lightgbm not installed")
 
 
 @needs_data
@@ -28,6 +42,7 @@ def test_cohort_matches_published_sizes():
 
 
 @needs_data
+@needs_lightgbm
 def test_released_model_truth_table_is_exhaustive():
     from covidbench.truth_table import truth_table
 
@@ -75,6 +90,31 @@ def test_score_table_is_a_sufficient_statistic():
     assert reconstructed_auc == pytest.approx(evaluate(y, p)["roc_auc"], abs=1e-9)
 
 
+def test_metrics_reconstruct_exactly_from_score_table():
+    rng = np.random.default_rng(7)
+    p = rng.choice([0.05, 0.1, 0.25, 0.4, 0.8], size=5000)
+    y = (rng.random(5000) < p).astype(int)
+
+    direct = evaluate(y, p, capacity=0.1)
+    reconstructed = metrics_from_score_table(score_table(y, p), capacity=0.1)
+
+    for key in ("roc_auc", "pr_auc", "sensitivity_at_capacity"):
+        assert reconstructed[key] == pytest.approx(direct[key], abs=1e-12)
+
+
+def test_bootstrap_intervals_bracket_the_point_estimate():
+    rng = np.random.default_rng(11)
+    p = rng.choice([0.05, 0.2, 0.6], size=4000)
+    y = (rng.random(4000) < p).astype(int)
+
+    table = score_table(y, p)
+    direct = evaluate(y, p, capacity=0.1)
+    intervals = bootstrap_confidence_intervals(table, capacity=0.1, n_boot=200)
+
+    for key in ("roc_auc", "pr_auc", "sensitivity_at_capacity"):
+        assert intervals[f"{key}_ci_low"] <= direct[key] <= intervals[f"{key}_ci_high"]
+
+
 def test_charts_render(tmp_path):
     payloads = [
         {
@@ -114,3 +154,65 @@ def test_zipped_csv_ignores_macosx_entries(tmp_path):
     frame = data._read_csv(archive)
     assert list(frame.columns) == ["test_date", "cough"]
     assert len(frame) == 1
+
+
+@needs_data
+def test_paper_profile_matches_canonical_cohort():
+    from covidbench.research.profiles import build_profile
+
+    pd.testing.assert_frame_equal(build_profile(missing_policy="paper"), data.build_cohort("v006"))
+
+
+@needs_data
+def test_inclusive_cohort_is_a_superset_of_the_published_one():
+    for split in ("train_2020_03", "test_2020_04"):
+        paper, _ = data.get_split(split, verify=True, cohort=config.COHORT_PAPER)
+        inclusive, y = data.get_split(split, verify=True, cohort=config.COHORT_INCLUSIVE)
+        assert len(inclusive) > len(paper)
+        assert len(inclusive) == config.EXPECTED_ROWS_INCLUSIVE[split]
+        assert int(y.sum()) == config.EXPECTED_POSITIVES_INCLUSIVE[split]
+        assert list(inclusive.columns) == config.FEATURES_INCLUSIVE
+        assert inclusive[config.FEATURES_INCLUSIVE].isin([0, 1]).all().all()
+
+
+@needs_data
+def test_indicator_flags_mark_exactly_the_rows_the_paper_drops():
+    inclusive = data.build_inclusive_cohort("v006")
+    paper = data.build_cohort("v006")
+    known = inclusive[(inclusive["Age_60_unknown"] == 0) & (inclusive["Gender_unknown"] == 0)]
+    assert len(known) == len(paper)
+
+
+def test_tracks_declare_their_own_ceiling():
+    # A shared ceiling across tracks would silently make different cohorts look comparable.
+    ceilings = {meta["ceiling"] for meta in config.TRACKS.values()}
+    assert len(ceilings) == len(config.TRACKS)
+    for track, meta in config.TRACKS.items():
+        spec = registry.get(meta["ceiling"])
+        assert track in spec.tracks
+
+
+def test_inclusive_track_hands_models_the_indicator_features():
+    spec = registry.get("logreg")
+    assert registry.features_for(spec, config.COHORT_PAPER) == config.FEATURES_ALL
+    assert registry.features_for(spec, config.COHORT_INCLUSIVE) == config.FEATURES_INCLUSIVE
+
+
+def test_released_artifacts_are_not_offered_on_the_inclusive_track():
+    # They are fixed 8-feature dumps; scoring them on another cohort is not a replication.
+    for name in ("released_lgbm_all", "released_lgbm_balanced", "ceiling_lookup"):
+        assert config.COHORT_INCLUSIVE not in registry.get(name).tracks
+
+
+@needs_data
+def test_missing_policies_actually_differ():
+    # The loader keeps blanks as empty strings, so a policy that forgets to
+    # normalise them silently produces the canonical cohort instead of a variant.
+    from covidbench.research.profiles import POLICIES, build_profile
+
+    sizes = {policy: len(build_profile(missing_policy=policy)) for policy in POLICIES}
+    assert sizes["drop_any"] < sizes["paper"]
+    assert sizes["keep_unknown_binary"] > sizes["paper"]
+    for policy in POLICIES:
+        frame = build_profile(missing_policy=policy)
+        assert frame[config.FEATURES_ALL].isin([0, 1]).all().all()
