@@ -7,7 +7,7 @@ import time
 from datetime import datetime, timezone
 
 from . import config, data, registry
-from .metrics import evaluate
+from .metrics import evaluate, score_table
 
 
 def run_model(name: str, eval_split: str, capacity: float, verify: bool = True) -> dict:
@@ -34,6 +34,7 @@ def run_model(name: str, eval_split: str, capacity: float, verify: bool = True) 
         "fit_seconds": round(fit_seconds, 3),
         "timestamp": datetime.now(timezone.utc).isoformat(timespec="seconds"),
         "metrics": evaluate(y_eval, probabilities, capacity),
+        "score_table": score_table(y_eval, probabilities),
     }
 
 

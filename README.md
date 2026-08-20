@@ -51,6 +51,7 @@ ceiling is everything, and is the extra complexity earning anything?"
 
 | Model | Sens @ 10% | % of ceiling | ROC-AUC | PR-AUC | Brier |
 | --- | ---: | ---: | ---: | ---: | ---: |
+| `xgboost` | 0.7494 | 100.5 | 0.9028 | 0.7092 | 0.0346 |
 | `lgbm_retrained` | 0.7462 | 100.0 | 0.9021 | 0.6968 | 0.0728 |
 | `ceiling_lookup` | 0.7459 | 100.0 | 0.9023 | 0.7020 | 0.0349 |
 | `released_lgbm_all` | 0.7311 | 98.0 | 0.8976 | 0.6499 | 0.0694 |
@@ -67,6 +68,7 @@ Same models, scored eight months later on the `v0083` dataset:
 
 | Model | Sens @ 10% | ROC-AUC | PR-AUC |
 | --- | ---: | ---: | ---: |
+| `xgboost` | 0.737 | 0.8543 | 0.5174 |
 | `ceiling_lookup` | 0.737 | 0.8541 | 0.5077 |
 | `lgbm_retrained` | 0.737 | 0.8516 | 0.5123 |
 | `released_lgbm_all` | 0.737 | 0.8513 | 0.5053 |
@@ -75,6 +77,35 @@ Same models, scored eight months later on the `v0083` dataset:
 
 ROC-AUC falls ~5% (0.898 → 0.851) while **PR-AUC falls ~22%** (0.650 → 0.505). Judged on AUC alone the
 degradation looks mild. It isn't — which is the metric argument in one line.
+
+---
+
+## Charts
+
+`covidbench.compare --html` renders five figures into `docs/charts/` and embeds them in the published
+leaderboard.
+
+| Chart | What it shows |
+| --- | --- |
+| Sensitivity vs capacity | The headline metric is one point on this curve; the detail panel zooms on the operating region |
+| Share of ceiling | How much of the achievable maximum each model reaches |
+| Temporal generalisation | April vs November, per metric — PR-AUC visibly degrades hardest |
+| Precision-recall and ROC | Side by side, showing PR separates models that ROC makes look identical |
+| Calibration | Equal-mass reliability curves against the diagonal |
+
+The calibration chart earns its place: `xgboost` and `ceiling_lookup` sit on the diagonal, while
+`lgbm_retrained`, `logreg` and `released_lgbm_balanced` fall well below it — they systematically
+**over-predict risk**, a direct consequence of `is_unbalance=True` and `class_weight="balanced"`.
+`released_lgbm_all` is near-vertical: with only 4 trees its predictions are compressed into roughly
+0.13–0.21 while observed rates span 0.01–0.55. Good ranking, unusable probabilities.
+
+### How charts avoid storing predictions
+
+Every figure is rebuilt from a `score_table` saved with each result — counts of people and positives per
+distinct predicted score. Since eight binary features admit at most 256 distinct scores, this is a few KB
+yet remains a **sufficient statistic**: ROC, PR, calibration and sensitivity at any capacity all reconstruct
+from it exactly. A test asserts the reconstructed ROC-AUC matches the metric computed from raw predictions
+to within 1e-9.
 
 ---
 
@@ -136,18 +167,20 @@ py -3.13 -m venv .venv
 covidbench/
   config.py        Constants: paths, splits, feature order. Single owner.
   data.py          Cohort rules, split construction, size assertions. Single owner.
-  metrics.py       evaluate() - the one scoring function. Single owner.
+  metrics.py       evaluate() and score_table() - the one scoring path. Single owner.
   registry.py      Auto-discovers everything in models/
   run.py           CLI; writes one JSON per run to results/
   compare.py       Builds the leaderboard and docs/index.html
+  plots.py         Chart rendering, isolated from metrics and model files
   truth_table.py   Enumerates the full 2^n input space
   models/
     released_lgbm.py    Published artifacts (baseline)
     ceiling_lookup.py   Empirical per-pattern rate (upper bound)
     lgbm_retrained.py   Retrained from published hyperparameters
     logreg.py           Interpretable linear benchmark
+    xgboost_clf.py      Peer GBM sanity check
 tests/
-  test_pipeline.py Cohort sizes, truth-table shape, tie handling, zip loading
+  test_pipeline.py Cohort sizes, truth table, tie handling, zip loading, chart rendering
 .github/workflows/
   bench.yml        CI: test, benchmark, publish to Pages
 ```
@@ -299,11 +332,13 @@ deploy job fails on `main` even when the benchmark passes.
 
 ## Roadmap
 
+- [x] XGBoost peer comparison
+- [x] Calibration curves alongside Brier scores
 - [ ] Additional models: CatBoost, shallow decision tree, naive Bayes, Explainable Boosting Machine
 - [ ] Subgroup breakdowns by age and gender
-- [ ] Calibration curves alongside Brier scores
 - [ ] Smoothing for the ceiling lookup table
 - [ ] Symptom-count scorecard as a clinical baseline
+- [ ] Sensitivity analysis: `NaN` symptoms (as the paper did) rather than imputing 0
 
 Neural networks are **deliberately excluded**: with 256 possible inputs an MLP cannot outperform the lookup
 table, so including one adds cost and invites "why didn't you tune it harder?"
