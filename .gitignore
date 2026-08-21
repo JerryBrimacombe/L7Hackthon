@@ -1,6 +1,8 @@
 .venv/
 __pycache__/
 *.pyc
-docs/
+docs/*
+!docs/
+!docs/*.md
 results/
 .pytest_cache/
