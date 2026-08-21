@@ -7,6 +7,7 @@ import pandas as pd
 import pytest
 
 from covidbench import config, data, plots, registry
+from covidbench.calibration import ScoreCalibrator
 from covidbench.metrics import (
     bootstrap_confidence_intervals,
     evaluate,
@@ -64,6 +65,20 @@ def test_evaluate_reports_score_granularity():
     result = evaluate(y, p, capacity=0.5)
     assert result["distinct_scores"] == 2
     assert result["sensitivity_at_capacity"] == pytest.approx(1.0)
+
+
+def test_sigmoid_calibration_preserves_ranking():
+    p = np.array([0.05, 0.2, 0.4, 0.8, 0.95])
+    y = np.array([0, 0, 1, 1, 1])
+    calibrated = ScoreCalibrator("sigmoid").fit(p, y).predict(p)
+    assert np.all(np.diff(calibrated) > 0)
+
+
+def test_isotonic_calibration_is_bounded():
+    p = np.array([0.05, 0.2, 0.4, 0.8, 0.95])
+    y = np.array([0, 0, 1, 1, 1])
+    calibrated = ScoreCalibrator("isotonic").fit(p, y).predict(np.array([0.1, 0.5, 0.9]))
+    assert np.all((calibrated >= 0) & (calibrated <= 1))
 
 
 def test_registry_discovers_models():

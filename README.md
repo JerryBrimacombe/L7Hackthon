@@ -99,6 +99,8 @@ leaderboard.
 | Temporal generalisation | April vs November, per metric — PR-AUC visibly degrades hardest |
 | Precision-recall and ROC | Side by side, showing PR separates models that ROC makes look identical |
 | Calibration | Equal-mass reliability curves against the diagonal |
+| Calibration diagnostics | Calibration error, log loss, and calibration slope |
+| Predicted probability distribution | Whether scores are compressed, extreme, or shifted from prevalence |
 
 ### Charts are rendered per track
 
@@ -116,6 +118,37 @@ The calibration chart earns its place: `xgboost` and `ceiling_lookup` sit on the
 **over-predict risk**, a direct consequence of `is_unbalance=True` and `class_weight="balanced"`.
 `released_lgbm_all` is near-vertical: with only 4 trees its predictions are compressed into roughly
 0.13–0.21 while observed rates span 0.01–0.55. Good ranking, unusable probabilities.
+
+### Calibration experiments
+
+Calibration is treated as a post-processing experiment, not as a replacement for the raw leaderboard.
+The model is trained on 22–27 March, a calibrator is fitted on the disjoint 28–31 March calibration
+period, and only then are probabilities scored on the untouched April or November evaluation week.
+This prevents the evaluation labels from teaching the probability mapping.
+
+Run a sigmoid calibrator, which is strictly monotonic and therefore preserves ranking:
+
+```powershell
+.\.venv\Scripts\python.exe -m covidbench.run --all --calibrate sigmoid
+.\.venv\Scripts\python.exe -m covidbench.run --all --calibrate sigmoid --eval-split shift_2020_11 --no-verify
+.\.venv\Scripts\python.exe -m covidbench.compare --html --no-ci
+```
+
+Isotonic calibration is also available as a more flexible sensitivity analysis:
+
+```powershell
+.\.venv\Scripts\python.exe -m covidbench.run --all --calibrate isotonic
+```
+
+Sigmoid is the recommended default for deployment-sized calibration sets. Isotonic can correct
+non-linear distortions, but it creates stepwise probabilities and may introduce ties that slightly
+change ROC-AUC and top-capacity ranking. Compare `brier`, `log_loss`, `calibration_error`, and
+`calibration_slope` alongside ROC-AUC, PR-AUC, and sensitivity at capacity. Calibration should improve
+probability interpretation; it is not expected to improve fixed-capacity ranking.
+
+The November split is a temporal shift, not a calibration set. Its prevalence is materially lower than
+April's, so a March-trained calibrator may still require a current-period prevalence adjustment before
+being used operationally.
 
 ### How charts avoid storing predictions
 

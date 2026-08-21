@@ -7,7 +7,7 @@ import json
 import pandas as pd
 
 from . import config, plots
-from .metrics import bootstrap_confidence_intervals
+from .metrics import bootstrap_confidence_intervals, calibration_metrics_from_score_table
 
 CEILING_MODEL = "ceiling_lookup"
 
@@ -83,6 +83,12 @@ PAGE = """<!doctype html>
 <p>We assess each model across three dimensions: screening performance when testing capacity is constrained, ranking performance across thresholds, and probability calibration. For a triage task, these are complementary views of the same problem rather than interchangeable ones.</p>
 
 <div class="panel">
+    <strong>Calibration experiment.</strong> Calibrated result files use a model fitted on 22-27 March and a
+    separate calibrator fitted on 28-31 March. April and November remain untouched evaluation weeks.
+    Sigmoid calibration preserves ranking; isotonic calibration is more flexible but can introduce ties.
+</div>
+
+<div class="panel">
   <strong>Classification performance and ROC curves</strong>
   <ul>
     <li>ROC curves show how well each model separates positives from negatives across all thresholds.</li>
@@ -124,6 +130,10 @@ PAGE = """<!doctype html>
   <li><strong>roc_auc_ci</strong>: 95% percentile bootstrap interval for ROC-AUC.</li>
   <li><strong>pr_auc</strong>: area under the precision-recall curve; often more informative when positives are rare.</li>
   <li><strong>brier</strong>: Brier score for probability calibration; lower is better.</li>
+    <li><strong>log_loss</strong>: logarithmic probability loss; strongly penalises confident wrong probabilities.</li>
+    <li><strong>calibration_error</strong>: weighted mean absolute gap between predicted probability and observed rate in equal-mass bins; lower is better.</li>
+    <li><strong>calibration_slope</strong>: slope from observed outcomes against the model log-odds; 1 is ideal, below 1 indicates over-extreme scores, and above 1 indicates compressed scores.</li>
+    <li><strong>calibration_intercept</strong>: calibration offset on the log-odds scale; 0 is ideal and non-zero values indicate a prevalence shift or systematic bias.</li>
   <li><strong>distinct_scores</strong>: number of unique predicted scores. With eight binary inputs, there are at most 256 distinct score values.</li>
   <li><strong>precision</strong>: proportion of selected high-risk patients who are truly positive. Higher is better.</li>
   <li><strong>recall</strong>: proportion of true positives captured at the operating threshold. This is the same screening idea as sensitivity at capacity.</li>
@@ -171,6 +181,9 @@ def load_payloads(eval_split: str | None = None) -> list[dict]:
         # Results written before tracks existed are all published-cohort runs.
         payload.setdefault("track", config.DEFAULT_TRACK)
         key = (payload["model"], payload["track"], payload["eval_split"])
+        missing_calibration = {"log_loss", "calibration_error", "calibration_slope", "calibration_intercept"} - payload["metrics"].keys()
+        if missing_calibration and payload.get("score_table"):
+            payload["metrics"].update(calibration_metrics_from_score_table(payload["score_table"]))
         if key not in payloads or payload["timestamp"] >= payloads[key]["timestamp"]:
             payloads[key] = payload
     if not payloads:
@@ -200,7 +213,8 @@ def leaderboard(frame: pd.DataFrame, track: str = config.DEFAULT_TRACK) -> pd.Da
     if not ceiling.empty and ceiling.iloc[0] > 0:
         board["pct_of_ceiling"] = 100 * board["sensitivity_at_capacity"] / ceiling.iloc[0]
     columns = ["model", "sensitivity_at_capacity", "sens_ci", "pct_of_ceiling", "roc_auc",
-               "roc_auc_ci", "pr_auc", "brier", "distinct_scores"]
+               "roc_auc_ci", "pr_auc", "brier", "log_loss", "calibration_error",
+               "calibration_slope", "calibration_intercept", "distinct_scores"]
     return board[[c for c in columns if c in board.columns]]
 
 
