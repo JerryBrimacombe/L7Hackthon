@@ -16,6 +16,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 from . import config
+from .metrics import confusion_matrix_at_capacity
 
 CEILING_MODEL = "ceiling_lookup"
 DPI = 140
@@ -344,6 +345,74 @@ def score_distribution(payloads: list[dict], path: Path, ceiling_model: str = CE
     return _save(fig, path)
 
 
+def confusion_matrices(
+    payloads: list[dict], path: Path, ceiling_model: str = CEILING_MODEL
+) -> Path:
+    """Render capacity-based confusion matrices with percentages and counts."""
+    if not payloads:
+        return None
+    ordered = sorted(payloads, key=lambda payload: payload["model"])
+    columns = min(3, len(ordered))
+    rows = int(np.ceil(len(ordered) / columns))
+    fig, axes = plt.subplots(
+        rows,
+        columns,
+        figsize=(4.2 * columns, 4.0 * rows),
+        squeeze=False,
+        constrained_layout=True,
+    )
+    axes_flat = axes.ravel()
+    image = None
+
+    for index, payload in enumerate(ordered):
+        matrix = confusion_matrix_at_capacity(
+            payload["score_table"], float(payload["metrics"].get("capacity", config.DEFAULT_CAPACITY))
+        )
+        values = np.array(
+            [
+                [matrix["tn"] / matrix["total_neg"], matrix["fp"] / matrix["total_neg"]],
+                [matrix["fn"] / matrix["total_pos"], matrix["tp"] / matrix["total_pos"]],
+            ]
+        )
+        ax = axes_flat[index]
+        image = ax.imshow(values, cmap="Blues", vmin=0, vmax=1)
+        labels = (("TN", "FP"), ("FN", "TP"))
+        for row in range(2):
+            for column in range(2):
+                count = matrix[{"TN": "tn", "FP": "fp", "FN": "fn", "TP": "tp"}[labels[row][column]]]
+                ax.text(
+                    column,
+                    row,
+                    f"{values[row, column]:.1%}\n(n={count:,.1f})",
+                    ha="center",
+                    va="center",
+                    fontsize=9,
+                    color="white" if values[row, column] > 0.5 else "#1b1b1b",
+                )
+        ax.set_xticks([0, 1], labels=["Actual negative", "Actual positive"])
+        ax.set_yticks([0, 1], labels=["Not prioritised", "Prioritised"])
+        ax.tick_params(axis="both", labelsize=8)
+        threshold = matrix["threshold"]
+        threshold_text = "n/a" if threshold is None else f"{threshold:.3f}"
+        ax.set_title(f"{payload['model']}\n10% capacity, cutoff {threshold_text}", fontsize=10)
+        for spine in ax.spines.values():
+            spine.set_visible(False)
+
+    for ax in axes_flat[len(ordered):]:
+        ax.axis("off")
+    fig.colorbar(image, ax=axes_flat[: len(ordered)].tolist(), fraction=0.025, pad=0.03, label="Row proportion")
+    fig.suptitle("Capacity-based confusion matrices", fontsize=13)
+    fig.text(
+        0.5,
+        0.01,
+        "Rows are prioritisation decisions; annotations show row percentages and tie-aware counts.",
+        ha="center",
+        fontsize=9,
+        color="#555555",
+    )
+    return _save(fig, path)
+
+
 CHARTS = [
     (
         "sensitivity_capacity.png",
@@ -380,6 +449,11 @@ CHARTS = [
         "Predicted probability distribution",
         "Shows whether probabilities are concentrated, overconfident, or compressed relative to the observed prevalence.",
     ),
+    (
+        "confusion_matrices.png",
+        "Capacity-based confusion matrices",
+        "At the 10% testing capacity, shows which people are prioritised and the resulting true-positive, false-positive, true-negative, and false-negative trade-off.",
+    ),
 ]
 
 _RENDERERS = {
@@ -390,6 +464,7 @@ _RENDERERS = {
     "calibration.png": lambda primary, everything, path, ceiling: calibration(primary, path, ceiling),
     "calibration_diagnostics.png": lambda primary, everything, path, ceiling: calibration_diagnostics(primary, path, ceiling),
     "score_distribution.png": lambda primary, everything, path, ceiling: score_distribution(primary, path, ceiling),
+    "confusion_matrices.png": lambda primary, everything, path, ceiling: confusion_matrices(primary, path, ceiling),
 }
 
 
