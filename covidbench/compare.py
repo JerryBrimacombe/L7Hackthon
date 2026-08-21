@@ -7,7 +7,11 @@ import json
 import pandas as pd
 
 from . import config, plots
-from .metrics import bootstrap_confidence_intervals, calibration_metrics_from_score_table
+from .metrics import (
+    bootstrap_confidence_intervals,
+    calibration_metrics_from_score_table,
+    confusion_matrix_at_capacity,
+)
 
 CEILING_MODEL = "ceiling_lookup"
 
@@ -114,6 +118,7 @@ PAGE = """<!doctype html>
 
 <h3>Classification summary at the operating threshold</h3>
 <p>These values describe the practical trade-off at the benchmark operating point: which cases are prioritised for testing, and what proportion of people are incorrectly flagged or missed.</p>
+<p>The confusion-matrix chart uses the same operating point. “Prioritised” means selected within the testing capacity; “actual positive” means the person later tested positive. The chart is a screening-prioritisation evaluation, not a diagnosis.</p>
 {summary_table}
 
 <h3>Explainability summary</h3>
@@ -141,6 +146,8 @@ PAGE = """<!doctype html>
   <li><strong>false_positive_rate</strong>: proportion of negatives incorrectly prioritised for testing. Lower is better.</li>
   <li><strong>false_negative_rate</strong>: proportion of true positives missed by the operating threshold. Lower is better.</li>
   <li><strong>f1_score</strong>: harmonic mean of precision and recall; a compact summary of the classification trade-off.</li>
+    <li><strong>prioritised</strong>: number of people selected within the configured testing capacity.</li>
+    <li><strong>true_positive</strong>, <strong>false_positive</strong>, <strong>true_negative</strong>, <strong>false_negative</strong>: tie-aware counts from the capacity-based confusion matrix. Counts may be fractional when the capacity boundary splits a tied score group.</li>
 </ul>
 
 <div class="callout">
@@ -260,27 +267,11 @@ def classification_summary(payloads: list[dict]) -> pd.DataFrame:
         if not score_table:
             continue
 
-        total_n = sum(int(r["n"]) for r in score_table)
-        total_pos = sum(int(r["pos"]) for r in score_table)
-        total_neg = total_n - total_pos
         capacity = float(payload["metrics"].get("capacity", 0.1))
-        target = max(1, int(round(capacity * total_n)))
-
-        selected_n = 0
-        tp = 0.0
-        fp = 0.0
-        for row in score_table:
-            if selected_n >= target:
-                break
-            n = int(row["n"])
-            pos = int(row["pos"])
-            take = min(target - selected_n, n)
-            tp += float(pos) * take / n if n else 0.0
-            fp += float(n - pos) * take / n if n else 0.0
-            selected_n += take
-
-        fn = max(total_pos - tp, 0.0)
-        tn = max(total_neg - fp, 0.0)
+        matrix = confusion_matrix_at_capacity(score_table, capacity)
+        total_pos = matrix["total_pos"]
+        total_neg = matrix["total_neg"]
+        tp, fp, tn, fn = matrix["tp"], matrix["fp"], matrix["tn"], matrix["fn"]
         precision = tp / (tp + fp) if (tp + fp) > 0 else 0.0
         recall = tp / total_pos if total_pos > 0 else 0.0
         specificity = tn / total_neg if total_neg > 0 else 0.0
@@ -288,17 +279,21 @@ def classification_summary(payloads: list[dict]) -> pd.DataFrame:
         fnr = fn / total_pos if total_pos > 0 else 0.0
         f1 = (2 * precision * recall / (precision + recall)) if (precision + recall) > 0 else 0.0
 
-        threshold = score_table[min(len(score_table) - 1, max(0, selected_n - 1))]["p"]
         rows.append(
             {
                 "model": payload["model"],
+                "prioritised": matrix["selected"],
+                "true_positive": tp,
+                "false_positive": fp,
+                "true_negative": tn,
+                "false_negative": fn,
                 "precision": precision,
                 "recall": recall,
                 "specificity": specificity,
                 "false_positive_rate": fpr,
                 "false_negative_rate": fnr,
                 "f1_score": f1,
-                "operating_threshold": threshold,
+                "operating_threshold": matrix["threshold"],
             }
         )
 

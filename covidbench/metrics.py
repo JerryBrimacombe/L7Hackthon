@@ -44,6 +44,51 @@ def sensitivity_at_capacity(y, p, capacity: float) -> float:
     return _expected_top_k_positives(y, p, k) / total_positives
 
 
+def confusion_matrix_at_capacity(table: list[dict], capacity: float) -> dict:
+    """Return tie-aware confusion counts for the highest-ranked capacity fraction.
+
+    Counts can be fractional when the capacity boundary falls inside a tied score
+    group. This is the same random tie-breaking convention used by sensitivity_at_capacity.
+    """
+    rows = sorted(table, key=lambda row: row["p"], reverse=True)
+    total_n = sum(int(row["n"]) for row in rows)
+    total_pos = sum(int(row["pos"]) for row in rows)
+    target = max(1, int(round(capacity * total_n)))
+
+    selected_n = 0
+    tp = 0.0
+    fp = 0.0
+    threshold = None
+    for row in rows:
+        if selected_n >= target:
+            break
+        n = int(row["n"])
+        pos = int(row["pos"])
+        take = min(target - selected_n, n)
+        fraction = take / n if n else 0.0
+        tp += pos * fraction
+        fp += (n - pos) * fraction
+        selected_n += take
+        threshold = float(row["p"])
+
+    total_neg = total_n - total_pos
+    fn = total_pos - tp
+    tn = total_neg - fp
+    return {
+        "capacity": float(capacity),
+        "target": target,
+        "selected": selected_n,
+        "threshold": threshold,
+        "tp": tp,
+        "fp": fp,
+        "tn": tn,
+        "fn": fn,
+        "total_n": total_n,
+        "total_pos": total_pos,
+        "total_neg": total_neg,
+    }
+
+
 def score_table(y, p) -> list[dict]:
     """Counts per distinct predicted score.
 

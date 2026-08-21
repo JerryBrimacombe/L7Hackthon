@@ -10,6 +10,7 @@ from covidbench import config, data, plots, registry
 from covidbench.calibration import ScoreCalibrator
 from covidbench.metrics import (
     bootstrap_confidence_intervals,
+    confusion_matrix_at_capacity,
     evaluate,
     metrics_from_score_table,
     score_table,
@@ -65,6 +66,25 @@ def test_evaluate_reports_score_granularity():
     result = evaluate(y, p, capacity=0.5)
     assert result["distinct_scores"] == 2
     assert result["sensitivity_at_capacity"] == pytest.approx(1.0)
+
+
+def test_confusion_matrix_counts_reconcile_with_labels():
+    y = np.array([1, 0, 1, 0, 1, 0, 0, 0, 1, 0])
+    p = np.array([0.9, 0.8, 0.7, 0.6, 0.5, 0.4, 0.3, 0.2, 0.1, 0.05])
+    matrix = confusion_matrix_at_capacity(score_table(y, p), capacity=0.3)
+    assert matrix["selected"] == 3
+    assert matrix["tp"] + matrix["fn"] == pytest.approx(matrix["total_pos"])
+    assert matrix["tn"] + matrix["fp"] == pytest.approx(matrix["total_neg"])
+    assert matrix["tp"] == pytest.approx(2.0)
+
+
+def test_confusion_matrix_handles_capacity_ties():
+    y = np.array([1, 0, 1, 0])
+    p = np.full(4, 0.5)
+    matrix = confusion_matrix_at_capacity(score_table(y, p), capacity=0.5)
+    assert matrix["selected"] == 2
+    assert matrix["tp"] == pytest.approx(1.0)
+    assert matrix["fp"] == pytest.approx(1.0)
 
 
 def test_sigmoid_calibration_preserves_ranking():

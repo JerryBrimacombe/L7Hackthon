@@ -48,6 +48,23 @@ The tracks contain different people and have different empirical ceilings. Compa
 - **Calibration slope**: `1.0` is ideal. A value below `1.0` usually means predictions are too extreme; a value above `1.0` usually means they are too compressed.
 - **Percentage of ceiling**: sensitivity compared with the `ceiling_lookup` reference for the same track. It is not a universal theoretical limit outside this dataset.
 
+## Confusion matrices on the Pages report
+
+The Pages report includes a capacity-based confusion matrix for each model. It uses the same 10% cutoff
+as sensitivity at capacity:
+
+| | Actual negative | Actual positive |
+| --- | ---: | ---: |
+| Not prioritised | True negative | False negative |
+| Prioritised | False positive | True positive |
+
+The heatmap displays row percentages and raw counts. “Prioritised” means selected for testing, not
+predicted to have COVID. The matrix is generated from the canonical temporal evaluation and should not
+be compared directly with the normalized random-split matrices in `Notebooks/LM_covid.ipynb`.
+
+When a capacity boundary falls inside a group of tied scores, counts are fractional. This is deliberate:
+it represents the average result over random tie-breaking and matches the headline sensitivity metric.
+
 ## Ranking versus probability
 
 A ranking score answers “who should be considered first?” A calibrated probability answers “among people scored near 20%, are about 20% actually positive?” These are different requirements.
