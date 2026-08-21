@@ -4,6 +4,23 @@ A reproducible benchmark harness for the COVID-19 symptom-based prediction model
 [*Machine learning-based prediction of COVID-19 diagnosis based on symptoms*](https://www.nature.com/articles/s41746-020-00372-6)
 (Zoabi, Deri-Rozov & Shomron, npj Digital Medicine, 2020).
 
+> **New here? Start with [Getting started](docs/GETTING_STARTED.md).** It explains how to install the
+> project, find the data, run a first model, and open the generated leaderboard. You do not need to
+> know GitHub or machine learning to follow it.
+
+## Choose your path
+
+| I want to... | Read this | Then run |
+| --- | --- | --- |
+| Get the benchmark running | [Getting started](docs/GETTING_STARTED.md) | `python -m covidbench.run --model logreg` |
+| Understand the numbers | [Concepts and results](docs/CONCEPTS.md) | `python -m covidbench.compare --html` |
+| Fix a setup or data problem | [Troubleshooting](docs/TROUBLESHOOTING.md) | Start with the matching error message |
+| Add a model or improve the project | [Contributing](CONTRIBUTING.md) | `python -m pytest -q` |
+| Browse the generated report | [Project guide](docs/README.md) | Open `docs/index.html` |
+
+The examples in the detailed guide use the repository's virtual-environment Python executable. On
+Windows use `.\.venv\Scripts\python.exe`; on macOS or Linux use `.venv/bin/python`.
+
 This repo does two things:
 
 1. **Replicates** the published LightGBM model from [nshomron/covidpred](https://github.com/nshomron/covidpred) and proves the replication is exact.
@@ -89,7 +106,7 @@ degradation looks mild. It isn't — which is the metric argument in one line.
 
 ## Charts
 
-`covidbench.compare --html` renders five figures into `docs/charts/` and embeds them in the published
+`covidbench.compare --html` renders seven figures into `docs/charts/` and embeds them in the published
 leaderboard.
 
 | Chart | What it shows |
@@ -169,7 +186,7 @@ to within 1e-9.
 
 By default the loader looks for `covidpred` as a **sibling directory**:
 
-```
+```text
 parent/
   covidpred/      <- git clone https://github.com/nshomron/covidpred.git
   L7Hackthon/     <- this repo
@@ -198,7 +215,7 @@ importing a missing library are skipped rather than breaking everyone else's run
 ### Run
 
 ```powershell
-# Verify the replication (6 tests)
+# Run the test suite
 .\.venv\Scripts\python.exe -m pytest -q
 
 # List registered models
@@ -420,7 +437,7 @@ the inclusive track.
 
 ---
 
-```
+```text
 covidbench/
   config.py        Constants: paths, splits, feature order, track definitions. Single owner.
   data.py          Cohort rules (published and inclusive), splits, size assertions. Single owner.
@@ -483,7 +500,6 @@ from xgboost import XGBClassifier
 
 from .. import config
 from ..registry import register
-
 
 @register(
     "xgboost",
@@ -589,7 +605,7 @@ If preprocessing ever drifts, those assertions fail loudly rather than silently 
 
 ### Headline: sensitivity at fixed testing capacity
 
-*"If we can only test 10% of people, what fraction of true cases do we catch?"*
+> If we can only test 10% of people, what fraction of true cases do we catch?
 
 This is preferred over ROC-AUC because:
 
@@ -678,5 +694,7 @@ pre-variants. It is a triage-prioritisation aid, not a diagnostic.
 
 ## License
 
-MIT.
+ MIT.
+
+<!-- End of guide -->
 
