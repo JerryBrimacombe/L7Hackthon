@@ -286,6 +286,64 @@ def calibration(payloads: list[dict], path: Path, ceiling_model: str = CEILING_M
     return _save(fig, path)
 
 
+def calibration_diagnostics(payloads: list[dict], path: Path, ceiling_model: str = CEILING_MODEL) -> Path:
+    """Compare reliability error, log loss, and calibration slope."""
+    rows = [p for p in payloads if "calibration_error" in p.get("metrics", {})]
+    if not rows:
+        return None
+    rows = sorted(rows, key=lambda p: p["model"])
+    names = [p["model"] for p in rows]
+    colours = ["black" if name == ceiling_model else _colours(names)[name] for name in names]
+    x = np.arange(len(names))
+    fig, axes = plt.subplots(1, 3, figsize=(13, 4.2))
+    for ax, key, title in (
+        (axes[0], "calibration_error", "Equal-mass calibration error"),
+        (axes[1], "log_loss", "Log loss"),
+        (axes[2], "calibration_slope", "Calibration slope"),
+    ):
+        values = [p["metrics"][key] for p in rows]
+        ax.bar(x, values, color=colours)
+        if key == "calibration_slope":
+            ax.axhline(1, color="grey", linestyle=":", linewidth=1)
+            ax.set_ylim(bottom=0)
+        _style(ax, title, "", key.replace("_", " ").title())
+        ax.set_xticks(x)
+        ax.set_xticklabels(names, rotation=45, ha="right", fontsize=7)
+    fig.tight_layout()
+    return _save(fig, path)
+
+
+def score_distribution(payloads: list[dict], path: Path, ceiling_model: str = CEILING_MODEL) -> Path:
+    """Show where each model places probability mass, with observed prevalence."""
+    if not payloads:
+        return None
+    fig, ax = plt.subplots(figsize=(8.5, 4.8))
+    colours = _colours(p["model"] for p in payloads)
+    for payload in sorted(payloads, key=lambda p: p["model"]):
+        table = payload.get("score_table", [])
+        if not table:
+            continue
+        total = sum(row["n"] for row in table)
+        probabilities = [row["p"] for row in table]
+        weights = [row["n"] / total for row in table]
+        ax.vlines(
+            probabilities,
+            0,
+            weights,
+            color="black" if payload["model"] == ceiling_model else colours[payload["model"]],
+            alpha=0.65,
+            linewidth=1.0,
+            label=payload["model"],
+        )
+    prevalence = payloads[0]["metrics"].get("prevalence")
+    if prevalence is not None:
+        ax.axvline(prevalence, color="crimson", linestyle="--", linewidth=1, label="observed prevalence")
+    _style(ax, "Predicted probability mass", "Predicted probability", "Share of people")
+    ax.set_xlim(0, 1)
+    ax.legend(fontsize=7, ncol=2)
+    return _save(fig, path)
+
+
 CHARTS = [
     (
         "sensitivity_capacity.png",
@@ -312,6 +370,16 @@ CHARTS = [
         "Calibration",
         "Predicted probability against observed positive rate, in bins holding equal numbers of people. Curves below the diagonal are over-predicting risk.",
     ),
+    (
+        "calibration_diagnostics.png",
+        "Calibration diagnostics",
+        "Equal-mass error and log loss should be low; a calibration slope near one indicates the model is neither too extreme nor too compressed.",
+    ),
+    (
+        "score_distribution.png",
+        "Predicted probability distribution",
+        "Shows whether probabilities are concentrated, overconfident, or compressed relative to the observed prevalence.",
+    ),
 ]
 
 _RENDERERS = {
@@ -320,6 +388,8 @@ _RENDERERS = {
     "shift_comparison.png": lambda primary, everything, path, ceiling: shift_comparison(everything, path),
     "pr_roc.png": lambda primary, everything, path, ceiling: pr_and_roc(primary, path, ceiling),
     "calibration.png": lambda primary, everything, path, ceiling: calibration(primary, path, ceiling),
+    "calibration_diagnostics.png": lambda primary, everything, path, ceiling: calibration_diagnostics(primary, path, ceiling),
+    "score_distribution.png": lambda primary, everything, path, ceiling: score_distribution(primary, path, ceiling),
 }
 
 

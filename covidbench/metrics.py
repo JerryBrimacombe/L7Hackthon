@@ -3,7 +3,8 @@ from __future__ import annotations
 
 import numpy as np
 import pandas as pd
-from sklearn.metrics import average_precision_score, brier_score_loss, roc_auc_score
+from sklearn.metrics import average_precision_score, brier_score_loss, log_loss, roc_auc_score
+from sklearn.linear_model import LogisticRegression
 
 from . import config
 
@@ -67,6 +68,7 @@ def evaluate(y, p, capacity: float = config.DEFAULT_CAPACITY) -> dict:
     p = np.asarray(p, dtype=float)
     sensitivity = sensitivity_at_capacity(y, p, capacity)
     prevalence = float(y.mean())
+    calibration = calibration_metrics(y, p)
     return {
         "n": int(len(y)),
         "positives": int(y.sum()),
@@ -77,8 +79,51 @@ def evaluate(y, p, capacity: float = config.DEFAULT_CAPACITY) -> dict:
         "roc_auc": float(roc_auc_score(y, p)),
         "pr_auc": float(average_precision_score(y, p)),
         "brier": float(brier_score_loss(y, p)),
+        **calibration,
         "distinct_scores": int(np.unique(p).size),
     }
+
+
+def calibration_metrics(y, p, bins: int = 10) -> dict:
+    """Return proper probability and reliability diagnostics."""
+    y = np.asarray(y, dtype=int)
+    p = np.asarray(p, dtype=float)
+    order = np.argsort(p)
+    p_sorted, y_sorted = p[order], y[order]
+    edges = np.linspace(0, len(p_sorted), min(bins, len(p_sorted)) + 1, dtype=int)
+    weighted_error = 0.0
+    for start, end in zip(edges[:-1], edges[1:]):
+        if end > start:
+            weighted_error += (end - start) * abs(
+                float(p_sorted[start:end].mean()) - float(y_sorted[start:end].mean())
+            )
+    ece = weighted_error / len(p_sorted) if len(p_sorted) else float("nan")
+
+    if np.unique(p).size < 2 or np.unique(y).size < 2:
+        slope, intercept = float("nan"), float("nan")
+    else:
+        calibration_model = LogisticRegression(C=1e6, solver="lbfgs", max_iter=1000)
+        logits = np.log(np.clip(p, 1e-6, 1 - 1e-6) / np.clip(1 - p, 1e-6, 1))
+        calibration_model.fit(logits.reshape(-1, 1), y)
+        slope = float(calibration_model.coef_[0, 0])
+        intercept = float(calibration_model.intercept_[0])
+    return {
+        "log_loss": float(log_loss(y, np.clip(p, 1e-15, 1 - 1e-15))),
+        "calibration_error": float(ece),
+        "calibration_slope": slope,
+        "calibration_intercept": intercept,
+    }
+
+
+def calibration_metrics_from_score_table(table: list[dict], bins: int = 10) -> dict:
+    """Backfill calibration diagnostics for result files written by older versions."""
+    probabilities = np.concatenate(
+        [np.full(int(row["n"]), float(row["p"])) for row in table]
+    )
+    labels = np.concatenate(
+        [np.r_[np.ones(int(row["pos"])), np.zeros(int(row["n"]) - int(row["pos"]))] for row in table]
+    )
+    return calibration_metrics(labels, probabilities, bins=bins)
 
 
 def _table_arrays(table: list[dict]) -> tuple[np.ndarray, np.ndarray, np.ndarray]:

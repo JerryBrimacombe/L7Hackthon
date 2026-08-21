@@ -7,6 +7,7 @@ import time
 from datetime import datetime, timezone
 
 from . import config, data, registry
+from .calibration import ScoreCalibrator
 from .explainability import summarize as explainability_summary
 from .metrics import evaluate, score_table
 
@@ -17,6 +18,7 @@ def run_model(
     capacity: float,
     verify: bool = True,
     track: str = config.DEFAULT_TRACK,
+    calibration_method: str | None = None,
 ) -> dict:
     spec = registry.get(name)
     if track not in spec.tracks:
@@ -25,7 +27,8 @@ def run_model(
     cohort = config.TRACKS[track]["cohort"]
     features = registry.features_for(spec, track)
 
-    X_train, y_train = data.get_split("train_2020_03", features, verify=verify, cohort=cohort)
+    train_split = "train_2020_03_model" if calibration_method else "train_2020_03"
+    X_train, y_train = data.get_split(train_split, features, verify=verify, cohort=cohort)
     X_eval, y_eval = data.get_split(eval_split, features, verify=verify, cohort=cohort)
 
     model = spec.factory()
@@ -35,14 +38,23 @@ def run_model(
     fit_seconds = time.perf_counter() - started
 
     probabilities = model.predict_proba(X_eval)[:, 1]
+    if calibration_method:
+        X_cal, y_cal = data.get_split("calibration_2020_03", features, verify=verify, cohort=cohort)
+        calibrator = ScoreCalibrator(calibration_method)
+        calibrator.fit(model.predict_proba(X_cal)[:, 1], y_cal)
+        probabilities = calibrator.predict(probabilities)
+    result_model = name if not calibration_method else f"{name}__calibrated_{calibration_method}"
     explainability = explainability_summary(model, features)
     return {
-        "model": name,
+        "model": result_model,
+        "base_model": name,
         "notes": spec.notes,
         "features": features,
         "track": track,
         "cohort": cohort,
-        "train_split": "train_2020_03",
+        "train_split": train_split,
+        "calibration_split": "calibration_2020_03" if calibration_method else None,
+        "calibration_method": calibration_method,
         "eval_split": eval_split,
         "pretrained": bool(getattr(model, "pretrained", False)),
         "fit_seconds": round(fit_seconds, 3),
@@ -76,6 +88,10 @@ def main() -> None:
         help="paper = published cohort; inclusive = keeps unknown demographics",
     )
     parser.add_argument("--capacity", type=float, default=config.DEFAULT_CAPACITY)
+    parser.add_argument(
+        "--calibrate", choices=("sigmoid", "isotonic"),
+        help="Fit a leakage-safe probability calibrator on the final March days.",
+    )
     parser.add_argument("--list", action="store_true", help="List available models and exit")
     parser.add_argument("--no-verify", action="store_true", help="Skip cohort size assertions")
     args = parser.parse_args()
@@ -96,7 +112,8 @@ def main() -> None:
     for name in names:
         try:
             result = run_model(
-                name, args.eval_split, args.capacity, verify=not args.no_verify, track=args.track
+                name, args.eval_split, args.capacity, verify=not args.no_verify, track=args.track,
+                calibration_method=args.calibrate,
             )
         except Exception as exc:
             # A missing optional library must not cost everyone else their run.
