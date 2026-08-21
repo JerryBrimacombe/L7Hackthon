@@ -1,4 +1,4 @@
-# L7 Hackathon â€” COVID Symptom Prediction Benchmark
+# L7 Hackathon — COVID Symptom Prediction Benchmark
 
 A reproducible benchmark harness for the COVID-19 symptom-based prediction model published in
 [*Machine learning-based prediction of COVID-19 diagnosis based on symptoms*](https://www.nature.com/articles/s41746-020-00372-6)
@@ -43,13 +43,13 @@ The original study predicts a positive COVID-19 test from eight binary inputs:
 | `Male` | `gender` |
 | `Contact_with_confirmed` | `test_indication` |
 
-The upstream repo ships **only model artifacts** â€” two LightGBM text dumps, a hyperparameter list, and the raw
+The upstream repo ships **only model artifacts** — two LightGBM text dumps, a hyperparameter list, and the raw
 data. There is no training code, no data pipeline, and no evaluation script. Everything here was
 reconstructed from the paper and the serialised models.
 
 ### The eight-binary-feature consequence
 
-Eight binary inputs means the entire input space is **2â¸ = 256 rows**. Two things follow, and they shape
+Eight binary inputs means the entire input space is **2⁸ = 256 rows**. Two things follow, and they shape
 the whole project:
 
 - A model can be **completely characterised** by enumerating all 256 inputs. That is an exact replication
@@ -57,7 +57,7 @@ the whole project:
 - The empirical positive rate per pattern is the **Bayes-optimal predictor**. No model can beat it. This is
   registered as `ceiling_lookup`, and every other model is reported as a percentage of it.
 
-The interesting question is therefore *not* "which model wins" â€” they all tie â€” but "how close to the
+The interesting question is therefore *not* "which model wins" — they all tie — but "how close to the
 ceiling is everything, and is the extra complexity earning anything?"
 
 ---
@@ -99,8 +99,8 @@ Same models, scored eight months later on the `v0083` dataset:
 | `logreg` | 0.727 | 0.8507 | 0.5062 |
 | `released_lgbm_balanced` | 0.671 | 0.8125 | 0.3280 |
 
-ROC-AUC falls ~5% (0.898 â†’ 0.851) while **PR-AUC falls ~22%** (0.650 â†’ 0.505). Judged on AUC alone the
-degradation looks mild. It isn't â€” which is the metric argument in one line.
+ROC-AUC falls ~5% (0.898 → 0.851) while **PR-AUC falls ~22%** (0.650 → 0.505). Judged on AUC alone the
+degradation looks mild. It isn't — which is the metric argument in one line.
 
 ---
 
@@ -113,7 +113,7 @@ leaderboard.
 | --- | --- |
 | Sensitivity vs capacity | The headline metric is one point on this curve; the detail panel zooms on the operating region |
 | Share of ceiling | How much of the achievable maximum each model reaches |
-| Temporal generalisation | April vs November, per metric â€” PR-AUC visibly degrades hardest |
+| Temporal generalisation | April vs November, per metric — PR-AUC visibly degrades hardest |
 | Precision-recall and ROC | Side by side, showing PR separates models that ROC makes look identical |
 | Calibration | Equal-mass reliability curves against the diagonal |
 | Calibration diagnostics | Calibration error, log loss, and calibration slope |
@@ -125,26 +125,26 @@ leaderboard.
 Each track gets its own chart set, drawn only from that track's results and highlighting that track's
 ceiling in black:
 
-- `docs/charts/` â€” the track chosen with `--track` (default `paper`)
-- `docs/charts/<track>/` â€” every other track with results, shown under *Other tracks* on the page
+- `docs/charts/` — the track chosen with `--track` (default `paper`)
+- `docs/charts/<track>/` — every other track with results, shown under *Other tracks* on the page
 
 This is not cosmetic. A single figure mixing tracks would overlay two different populations on the
 same axes, and the share-of-ceiling bars would be measured against the wrong ceiling entirely.
 
 The calibration chart earns its place: `xgboost` and `ceiling_lookup` sit on the diagonal, while
-`lgbm_retrained`, `logreg` and `released_lgbm_balanced` fall well below it â€” they systematically
+`lgbm_retrained`, `logreg` and `released_lgbm_balanced` fall well below it — they systematically
 **over-predict risk**, a direct consequence of `is_unbalance=True` and `class_weight="balanced"`.
 `released_lgbm_all` is near-vertical: with only 4 trees its predictions are compressed into roughly
-0.13â€“0.21 while observed rates span 0.01â€“0.55. Good ranking, unusable probabilities.
+0.13–0.21 while observed rates span 0.01–0.55. Good ranking, unusable probabilities.
 
-The confusion-matrix chart uses the same operating point as the headline metric. â€œPrioritisedâ€ means
-selected in the highest-ranked 10% for testing; â€œactual positiveâ€ means a later positive test. It is
+The confusion-matrix chart uses the same operating point as the headline metric. “Prioritised” means
+selected in the highest-ranked 10% for testing; “actual positive” means a later positive test. It is
 therefore a capacity-based screening matrix, not the notebook's random-split matrix and not a diagnosis.
 
 ### Calibration experiments
 
 Calibration is treated as a post-processing experiment, not as a replacement for the raw leaderboard.
-The model is trained on 22â€“27 March, a calibrator is fitted on the disjoint 28â€“31 March calibration
+The model is trained on 22–27 March, a calibrator is fitted on the disjoint 28–31 March calibration
 period, and only then are probabilities scored on the untouched April or November evaluation week.
 This prevents the evaluation labels from teaching the probability mapping.
 
@@ -174,7 +174,7 @@ being used operationally.
 
 ### How charts avoid storing predictions
 
-Every figure is rebuilt from a `score_table` saved with each result â€” counts of people and positives per
+Every figure is rebuilt from a `score_table` saved with each result — counts of people and positives per
 distinct predicted score. Since eight binary features admit at most 256 distinct scores, this is a few KB
 yet remains a **sufficient statistic**: ROC, PR, calibration and sensitivity at any capacity all reconstruct
 from it exactly. A test asserts the reconstructed ROC-AUC matches the metric computed from raw predictions
@@ -186,7 +186,7 @@ to within 1e-9.
 
 ### Prerequisites
 
-- **Python 3.13.** Not 3.14 â€” LightGBM has no wheels for it yet.
+- **Python 3.13.** Not 3.14 — LightGBM has no wheels for it yet.
 - A local checkout of [nshomron/covidpred](https://github.com/nshomron/covidpred) for the data.
 
 By default the loader looks for `covidpred` as a **sibling directory**:
@@ -204,7 +204,7 @@ If neither is found, the loader falls back to a copy of the `v006` CSV checked i
 root, so a fresh clone runs the tests and the April benchmark with no setup at all. The `v0083`
 dataset is not vendored, so the November shift split still needs a `covidpred` checkout.
 
-Resolution order is: `COVIDPRED_ROOT/data/â€¦` â†’ sibling `covidpred/data/â€¦` â†’ repository root.
+Resolution order is: `COVIDPRED_ROOT/data/…` → sibling `covidpred/data/…` → repository root.
 
 ### Install
 
@@ -267,7 +267,7 @@ results without re-running any model. Use `--n-boot` to trade precision for spee
 
 Why this matters: a random split draws train and test from the same weeks, so it leaks temporal
 structure and inflates every metric. The canonical benchmark stays temporal because the most
-interesting result in this repo â€” PR-AUC falling ~22% by November while ROC-AUC falls only ~5% â€” is
+interesting result in this repo — PR-AUC falling ~22% by November while ROC-AUC falls only ~5% — is
 invisible under a random split.
 
 Both are available. Use `covidbench.run` for results that belong on the leaderboard, and
@@ -290,7 +290,7 @@ normalises the sentinel first.
 
 This matters more than any hyperparameter in the repo: `age_60_and_above` is missing for **127,320 of
 278,848 rows (~46%)** and `gender` for 19,563. Across the whole file the paper's rules discard about
-half the data â€” though, as the two-tracks section explains, only ~2.2% inside the actual benchmark
+half the data — though, as the two-tracks section explains, only ~2.2% inside the actual benchmark
 windows. The canonical answer to this question is the `inclusive` track; the policies below are the
 exploratory sweep that led to it.
 
@@ -304,9 +304,9 @@ exploratory sweep that led to it.
 Two findings worth knowing before reading any comparison:
 
 - **`impute_mode` and `keep_unknown_binary` are identical on v006.** The mode of `age_60_and_above`
-  is `No` and of `gender` is `female`, both of which map to 0 â€” exactly what "unknown â†’ 0" does. They
+  is `No` and of `gender` is `female`, both of which map to 0 — exactly what "unknown → 0" does. They
   may diverge on `v0083`; that is untested.
-- **Prevalence moves with the policy** (7.80% â†’ 5.36%). Sensitivity at a fixed 10% capacity is
+- **Prevalence moves with the policy** (7.80% → 5.36%). Sensitivity at a fixed 10% capacity is
   therefore *not* comparable across policies. Compare within a policy first.
 
 ### Missing indicators
@@ -316,7 +316,7 @@ unknown into 0. On `logreg` with `keep_unknown_binary` this is a real improvemen
 
 | Encoding | Sens @ 10% | ROC-AUC | PR-AUC |
 | --- | ---: | ---: | ---: |
-| unknown â†’ 0 | 0.7312 | 0.8835 | 0.5835 |
+| unknown → 0 | 0.7312 | 0.8835 | 0.5835 |
 | explicit indicators | 0.7399 | 0.8913 | 0.5935 |
 
 This experiment is what motivated the canonical `inclusive` track. Use the track for reportable
@@ -351,7 +351,7 @@ The flags are constant zero for `paper` and `impute_mode`, which remove or overw
 This is the most important thing to understand before reading any number in this repo.
 
 The source data records `age_60_and_above` and `gender` as the literal string `"None"` for a large
-share of people. How you treat those rows decides **who is in the cohort at all** â€” it is a change of
+share of people. How you treat those rows decides **who is in the cohort at all** — it is a change of
 population, not a change of feature encoding. There is no single right answer, so the repo runs both
 and keeps them rigorously apart.
 
@@ -359,7 +359,7 @@ and keeps them rigorously apart.
 | --- | --- | --- |
 | Cohort | Drops rows with unknown age or gender | Keeps them |
 | Features | 8 binary (or 5 for the balanced model) | 10 = the same 8 plus `Age_60_unknown`, `Gender_unknown` |
-| Input space | 2â¸ = 256 | 2Â¹â° = 1024 |
+| Input space | 2⁸ = 256 | 2¹⁰ = 1024 |
 | Ceiling | `ceiling_lookup` | `ceiling_lookup_inclusive` |
 | Train / eval rows | 51,831 / 47,401 | 53,020 / 48,462 |
 | Can claim replication? | **Yes** | No |
@@ -371,7 +371,7 @@ reproducing its numbers requires dropping them too. This track is the only one a
 replicated the paper". `data.build_cohort` is deliberately untouched by the inclusive work.
 
 **`inclusive` exists because dropping data to encode it as 0 is lossy.** Under the paper's rules an
-unknown age becomes `Age_60_plus = 0` â€” indistinguishable from someone confirmed to be under 60. The
+unknown age becomes `Age_60_plus = 0` — indistinguishable from someone confirmed to be under 60. The
 inclusive track keeps the row and flags it, so the model can tell "recorded as under 60" apart from
 "not recorded".
 
@@ -380,7 +380,7 @@ inclusive track keeps the row and flags it, so the model can tell "recorded as u
 Two independent reasons, and either alone would be enough:
 
 1. **Different populations.** The tracks score different sets of people, so their denominators
-   differ. A higher sensitivity in one track does not mean a better model â€” usually it means an
+   differ. A higher sensitivity in one track does not mean a better model — usually it means an
    easier or harder population.
 2. **Different ceilings.** `ceiling_lookup` memorises the empirical positive rate per input pattern.
    Over 1024 patterns instead of 256 it memorises more noise, so the inclusive ceiling sits higher
@@ -400,11 +400,11 @@ scaled up:
 | --- | ---: | ---: |
 | March 2020 (all) | 66,479 | 22.0% |
 | April 2020 (all) | 208,477 | 59.4% |
-| **`train_2020_03` window (22â€“31 Mar)** | **53,020** | **2.2%** |
-| **`test_2020_04` window (1â€“7 Apr)** | **48,462** | **2.2%** |
+| **`train_2020_03` window (22–31 Mar)** | **53,020** | **2.2%** |
+| **`test_2020_04` window (1–7 Apr)** | **48,462** | **2.2%** |
 
 The paper's evaluation windows sit in the period where recording was still good. So although the
-`v006` file is ~50% unknown overall, the canonical splits lose only ~2.2% of rows â€” and the inclusive
+`v006` file is ~50% unknown overall, the canonical splits lose only ~2.2% of rows — and the inclusive
 track adds only about 1,100 rows to each split.
 
 The measured consequence on `test_2020_04` is that the two tracks land within noise of each other:
@@ -416,7 +416,7 @@ The measured consequence on `test_2020_04` is that the two tracks land within no
 | `logreg` | 0.7255 | 0.7245 |
 
 **The inclusive track is not a free win on these splits.** Its value shows up when the evaluation
-window includes the badly-recorded period â€” a random split across all of `v006` moves `logreg` from
+window includes the badly-recorded period — a random split across all of `v006` moves `logreg` from
 0.7312 to 0.7399, because there half the rows have unknown demographics. Keep the inclusive track for
 that reason and for later datasets like `v0083`, not because it flatters the April numbers.
 
@@ -522,9 +522,9 @@ def xgboost_clf():
 ```
 
 `tracks` defaults to the `paper` track alone. Listing the inclusive track as well is all that is
-needed to run on both cohorts â€” the registry appends the two indicator columns for you.
+needed to run on both cohorts — the registry appends the two indicator columns for you.
 
-The contract is deliberately minimal â€” anything with **`fit(X, y)`** and **`predict_proba(X)`** works, which
+The contract is deliberately minimal — anything with **`fit(X, y)`** and **`predict_proba(X)`** works, which
 means every scikit-learn, XGBoost, CatBoost and InterpretML estimator conforms already. There is no base
 class to inherit.
 
@@ -540,7 +540,7 @@ neither (for example `ceiling_lookup`) report `n/a`.
 
 `ceiling_lookup` is the empirical positive rate per pattern over the 8 features, and is the bound for
 every 8-feature model on the `paper` track. `released_lgbm_balanced` only sees 5 features, so that
-bound does not apply to it â€” `ceiling_lookup_balanced` is its correct reference. The `pct_of_ceiling`
+bound does not apply to it — `ceiling_lookup_balanced` is its correct reference. The `pct_of_ceiling`
 column is computed against the 8-feature ceiling, so read the balanced model against its own ceiling
 row rather than the percentage.
 
@@ -574,10 +574,10 @@ Then:
 
 Source: Israeli Ministry of Health public testing data, via `covidpred`.
 
-- `v006` â€” downloaded 4 May 2020. **278,848 rows**, 11 Mar â€“ 30 Apr 2020. Used for replication.
-- `v0083` â€” downloaded 15 Nov 2020. Used for the temporal shift test.
+- `v006` — downloaded 4 May 2020. **278,848 rows**, 11 Mar – 30 Apr 2020. Used for replication.
+- `v0083` — downloaded 15 Nov 2020. Used for the temporal shift test.
 
-Raw `v006` label distribution: 260,227 negative / 14,729 positive / 3,892 `other` â€” roughly **5.3% prevalence**.
+Raw `v006` label distribution: 260,227 negative / 14,729 positive / 3,892 `other` — roughly **5.3% prevalence**.
 
 ### Inclusion rules
 
@@ -589,7 +589,7 @@ Raw `v006` label distribution: 260,227 negative / 14,729 positive / 3,892 `other
 ### How missingness is encoded
 
 The CSV writes missing values as the literal string `"None"`, not as an empty cell, and `data.py`
-reads with `keep_default_na=False`. The canonical pipeline handles this by construction â€”
+reads with `keep_default_na=False`. The canonical pipeline handles this by construction —
 `pd.to_numeric(..., errors="coerce")` turns `"None"` into `NaN` for symptoms, and the `isin(["Yes",
 "No"])` filter excludes it for demographics.
 
@@ -601,9 +601,9 @@ This reproduces the published cohort **exactly**, and [`tests/test_pipeline.py`]
 
 | Split | Window | Rows | Positives |
 | --- | --- | ---: | ---: |
-| `train_2020_03` | 22â€“31 Mar 2020 | 51,831 | 4,769 |
-| `test_2020_04` | 1â€“7 Apr 2020 | 47,401 | 3,624 |
-| `shift_2020_11` | 1â€“7 Nov 2020 | â€” | â€” |
+| `train_2020_03` | 22–31 Mar 2020 | 51,831 | 4,769 |
+| `test_2020_04` | 1–7 Apr 2020 | 47,401 | 3,624 |
+| `shift_2020_11` | 1–7 Nov 2020 | — | — |
 
 If preprocessing ever drifts, those assertions fail loudly rather than silently corrupting every comparison.
 
@@ -619,17 +619,17 @@ If preprocessing ever drifts, those assertions fail loudly rather than silently 
 
 This is preferred over ROC-AUC because:
 
-1. **It matches the actual decision.** The paper's stated purpose is prioritising scarce tests â€” a
+1. **It matches the actual decision.** The paper's stated purpose is prioritising scarce tests — a
    budget-constrained ranking problem, not a threshold-free one.
 2. **AUC averages over operating points nobody uses.** It weights the 90%-capacity regime equally with the 5%
    regime. Nobody deploys at 90%.
 3. **It is directly interpretable.** "Test 10% of arrivals, catch 73% of cases" is actionable. "AUC 0.8976" is not.
 4. **AUC hides prevalence shift**, as the November results above demonstrate.
-5. **It exposes ranking ties.** With â‰¤256 distinct scores, huge groups of people share one score. AUC smooths
+5. **It exposes ranking ties.** With ≤256 distinct scores, huge groups of people share one score. AUC smooths
    this away; `sensitivity_at_capacity` computes the expected value under random tie-breaking, so results
    don't silently depend on row ordering.
 
-ROC-AUC is still reported for comparability with the paper â€” just don't lead with it.
+ROC-AUC is still reported for comparability with the paper — just don't lead with it.
 
 ---
 
@@ -640,7 +640,7 @@ here because each one fails silently or confusingly.
 
 **1. Windows line endings corrupt the released model.**
 LightGBM splits trees using byte offsets in the `tree_sizes` header. A checkout with `core.autocrlf=true`
-rewrites the file with CRLF, invalidating every offset â€” LightGBM then **aborts the interpreter** with
+rewrites the file with CRLF, invalidating every offset — LightGBM then **aborts the interpreter** with
 `Model format error, expect a tree here`. `released_lgbm.py` normalises line endings in memory before loading.
 
 **2. Missing symptom values.**
@@ -676,7 +676,7 @@ windows, and uploads `results/` as an artifact.
 The concurrency key resolves to the branch name for both `push` and `pull_request`, so a branch with an open
 PR doesn't burn two runners on identical work.
 
-**Before the first deploy:** enable Pages under *Settings â†’ Pages â†’ Source: GitHub Actions*. Without it, the
+**Before the first deploy:** enable Pages under *Settings → Pages → Source: GitHub Actions*. Without it, the
 deploy job fails on `main` even when the benchmark passes.
 
 ---
