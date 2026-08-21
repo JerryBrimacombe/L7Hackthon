@@ -1,3 +1,6 @@
 # Extra model libraries. Models importing these are skipped automatically if absent.
 xgboost==2.1.4
 catboost==1.2.8
+
+# Only needed to re-run the archived notebooks in Notebooks/.
+seaborn==0.13.2

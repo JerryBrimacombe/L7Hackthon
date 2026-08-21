@@ -7,7 +7,12 @@ from .. import config
 from ..registry import register
 
 
-@register("lgbm_retrained", features=config.FEATURES_ALL, notes="Paper hyperparameters, retrained")
+@register(
+    "lgbm_retrained",
+    features=config.FEATURES_ALL,
+    notes="Paper hyperparameters, retrained",
+    tracks=(config.COHORT_PAPER, config.COHORT_INCLUSIVE),
+)
 def lgbm_retrained():
     return LGBMClassifier(
         num_leaves=20,

@@ -91,7 +91,9 @@ def _reliability(score_table: list[dict], bins: int = 10):
     return np.array(predicted), np.array(observed), np.array(weight)
 
 
-def sensitivity_vs_capacity(payloads: list[dict], path: Path) -> Path:
+def sensitivity_vs_capacity(
+    payloads: list[dict], path: Path, ceiling_model: str = CEILING_MODEL
+) -> Path:
     colours = _colours(p["model"] for p in payloads)
     fig, (full_ax, zoom_ax) = plt.subplots(1, 2, figsize=(11.5, 4.6))
     capacity = payloads[0]["metrics"]["capacity"]
@@ -100,7 +102,7 @@ def sensitivity_vs_capacity(payloads: list[dict], path: Path) -> Path:
         for payload in sorted(payloads, key=lambda p: p["model"]):
             name = payload["model"]
             curve = _curve(payload["score_table"])
-            is_ceiling = name == CEILING_MODEL
+            is_ceiling = name == ceiling_model
             ax.plot(
                 curve["capacity"],
                 curve["sensitivity"],
@@ -137,9 +139,9 @@ def sensitivity_vs_capacity(payloads: list[dict], path: Path) -> Path:
     return _save(fig, path)
 
 
-def ceiling_bars(payloads: list[dict], path: Path) -> Path:
+def ceiling_bars(payloads: list[dict], path: Path, ceiling_model: str = CEILING_MODEL) -> Path:
     ceiling = next(
-        (p["metrics"]["sensitivity_at_capacity"] for p in payloads if p["model"] == CEILING_MODEL),
+        (p["metrics"]["sensitivity_at_capacity"] for p in payloads if p["model"] == ceiling_model),
         None,
     )
     if not ceiling:
@@ -157,7 +159,7 @@ def ceiling_bars(payloads: list[dict], path: Path) -> Path:
     bars = ax.barh(
         names,
         values,
-        color=["black" if n == CEILING_MODEL else colours[n] for n in names],
+        color=["black" if n == ceiling_model else colours[n] for n in names],
         height=0.6,
     )
     for bar, value in zip(bars, values):
@@ -213,15 +215,15 @@ def shift_comparison(all_payloads: list[dict], path: Path) -> Path:
     return _save(fig, path)
 
 
-def pr_and_roc(payloads: list[dict], path: Path) -> Path:
+def pr_and_roc(payloads: list[dict], path: Path, ceiling_model: str = CEILING_MODEL) -> Path:
     colours = _colours(p["model"] for p in payloads)
     fig, (pr_ax, roc_ax) = plt.subplots(1, 2, figsize=(11, 4.6))
 
     for payload in sorted(payloads, key=lambda p: p["model"]):
         name = payload["model"]
         curve = _curve(payload["score_table"])
-        colour = "black" if name == CEILING_MODEL else colours[name]
-        style = "--" if name == CEILING_MODEL else "-"
+        colour = "black" if name == ceiling_model else colours[name]
+        style = "--" if name == ceiling_model else "-"
         label = f"{name} ({payload['metrics']['pr_auc']:.3f})"
         pr_ax.plot(curve["sensitivity"][1:], curve["precision"][1:], label=label, color=colour, linestyle=style, linewidth=1.4)
         roc_ax.plot(
@@ -251,7 +253,7 @@ def pr_and_roc(payloads: list[dict], path: Path) -> Path:
     return _save(fig, path)
 
 
-def calibration(payloads: list[dict], path: Path) -> Path:
+def calibration(payloads: list[dict], path: Path, ceiling_model: str = CEILING_MODEL) -> Path:
     colours = _colours(p["model"] for p in payloads)
     fig, ax = plt.subplots(figsize=(6.4, 5.6))
 
@@ -268,8 +270,8 @@ def calibration(payloads: list[dict], path: Path) -> Path:
             marker="o",
             markersize=4,
             linewidth=1.3,
-            color="black" if name == CEILING_MODEL else colours[name],
-            linestyle="--" if name == CEILING_MODEL else "-",
+            color="black" if name == ceiling_model else colours[name],
+            linestyle="--" if name == ceiling_model else "-",
             label=f"{name} (Brier {payload['metrics']['brier']:.4f})",
         )
 
@@ -281,6 +283,64 @@ def calibration(payloads: list[dict], path: Path) -> Path:
     ax.set_ylim(0, limit)
     ax.set_aspect("equal")
     ax.legend(fontsize=7, loc="upper left")
+    return _save(fig, path)
+
+
+def calibration_diagnostics(payloads: list[dict], path: Path, ceiling_model: str = CEILING_MODEL) -> Path:
+    """Compare reliability error, log loss, and calibration slope."""
+    rows = [p for p in payloads if "calibration_error" in p.get("metrics", {})]
+    if not rows:
+        return None
+    rows = sorted(rows, key=lambda p: p["model"])
+    names = [p["model"] for p in rows]
+    colours = ["black" if name == ceiling_model else _colours(names)[name] for name in names]
+    x = np.arange(len(names))
+    fig, axes = plt.subplots(1, 3, figsize=(13, 4.2))
+    for ax, key, title in (
+        (axes[0], "calibration_error", "Equal-mass calibration error"),
+        (axes[1], "log_loss", "Log loss"),
+        (axes[2], "calibration_slope", "Calibration slope"),
+    ):
+        values = [p["metrics"][key] for p in rows]
+        ax.bar(x, values, color=colours)
+        if key == "calibration_slope":
+            ax.axhline(1, color="grey", linestyle=":", linewidth=1)
+            ax.set_ylim(bottom=0)
+        _style(ax, title, "", key.replace("_", " ").title())
+        ax.set_xticks(x)
+        ax.set_xticklabels(names, rotation=45, ha="right", fontsize=7)
+    fig.tight_layout()
+    return _save(fig, path)
+
+
+def score_distribution(payloads: list[dict], path: Path, ceiling_model: str = CEILING_MODEL) -> Path:
+    """Show where each model places probability mass, with observed prevalence."""
+    if not payloads:
+        return None
+    fig, ax = plt.subplots(figsize=(8.5, 4.8))
+    colours = _colours(p["model"] for p in payloads)
+    for payload in sorted(payloads, key=lambda p: p["model"]):
+        table = payload.get("score_table", [])
+        if not table:
+            continue
+        total = sum(row["n"] for row in table)
+        probabilities = [row["p"] for row in table]
+        weights = [row["n"] / total for row in table]
+        ax.vlines(
+            probabilities,
+            0,
+            weights,
+            color="black" if payload["model"] == ceiling_model else colours[payload["model"]],
+            alpha=0.65,
+            linewidth=1.0,
+            label=payload["model"],
+        )
+    prevalence = payloads[0]["metrics"].get("prevalence")
+    if prevalence is not None:
+        ax.axvline(prevalence, color="crimson", linestyle="--", linewidth=1, label="observed prevalence")
+    _style(ax, "Predicted probability mass", "Predicted probability", "Share of people")
+    ax.set_xlim(0, 1)
+    ax.legend(fontsize=7, ncol=2)
     return _save(fig, path)
 
 
@@ -310,22 +370,46 @@ CHARTS = [
         "Calibration",
         "Predicted probability against observed positive rate, in bins holding equal numbers of people. Curves below the diagonal are over-predicting risk.",
     ),
+    (
+        "calibration_diagnostics.png",
+        "Calibration diagnostics",
+        "Equal-mass error and log loss should be low; a calibration slope near one indicates the model is neither too extreme nor too compressed.",
+    ),
+    (
+        "score_distribution.png",
+        "Predicted probability distribution",
+        "Shows whether probabilities are concentrated, overconfident, or compressed relative to the observed prevalence.",
+    ),
 ]
 
 _RENDERERS = {
-    "sensitivity_capacity.png": lambda primary, everything, path: sensitivity_vs_capacity(primary, path),
-    "ceiling_bars.png": lambda primary, everything, path: ceiling_bars(primary, path),
-    "shift_comparison.png": lambda primary, everything, path: shift_comparison(everything, path),
-    "pr_roc.png": lambda primary, everything, path: pr_and_roc(primary, path),
-    "calibration.png": lambda primary, everything, path: calibration(primary, path),
+    "sensitivity_capacity.png": lambda primary, everything, path, ceiling: sensitivity_vs_capacity(primary, path, ceiling),
+    "ceiling_bars.png": lambda primary, everything, path, ceiling: ceiling_bars(primary, path, ceiling),
+    "shift_comparison.png": lambda primary, everything, path, ceiling: shift_comparison(everything, path),
+    "pr_roc.png": lambda primary, everything, path, ceiling: pr_and_roc(primary, path, ceiling),
+    "calibration.png": lambda primary, everything, path, ceiling: calibration(primary, path, ceiling),
+    "calibration_diagnostics.png": lambda primary, everything, path, ceiling: calibration_diagnostics(primary, path, ceiling),
+    "score_distribution.png": lambda primary, everything, path, ceiling: score_distribution(primary, path, ceiling),
 }
 
 
-def render_all(primary: list[dict], everything: list[dict], charts_dir: Path) -> list[dict]:
-    """Render every chart, skipping any that lack the data they need."""
+def render_all(
+    primary: list[dict],
+    everything: list[dict],
+    charts_dir: Path,
+    rel_prefix: str = "charts",
+    ceiling_model: str = CEILING_MODEL,
+) -> list[dict]:
+    """Render every chart, skipping any that lack the data they need.
+
+    `everything` must already be restricted to one track: a figure spanning tracks would
+    overlay two different populations on the same axes.
+    """
     rendered = []
     for filename, title, caption in CHARTS:
-        result = _RENDERERS[filename](primary, everything, charts_dir / filename)
+        result = _RENDERERS[filename](primary, everything, charts_dir / filename, ceiling_model)
         if result is not None:
-            rendered.append({"file": f"charts/{filename}", "title": title, "caption": caption})
+            rendered.append(
+                {"file": f"{rel_prefix}/{filename}", "title": title, "caption": caption}
+            )
     return rendered
