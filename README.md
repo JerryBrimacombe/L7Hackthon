@@ -252,6 +252,11 @@ Several models sit within a fraction of a point of one another, and with ~3,600 
 evaluation week those gaps are mostly sampling noise. **Where intervals overlap, the ordering is not
 evidence that one model beats another.**
 
+The generated report also includes a separate simple classification leaderboard with `ROC-AUC`,
+`PR-AUC`, `precision`, `recall`, `f1_score`, and `support`. Support is the total number of people in
+the evaluation cohort. This compact table complements, rather than replaces, the two track-specific
+leaderboards and the detailed confusion-matrix summary.
+
 The intervals are resampled from the stored `score_table`, so they can be recomputed for historical
 results without re-running any model. Use `--n-boot` to trade precision for speed.
 

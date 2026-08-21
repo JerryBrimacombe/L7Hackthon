@@ -8,6 +8,7 @@ import pytest
 
 from covidbench import config, data, plots, registry
 from covidbench.calibration import ScoreCalibrator
+from covidbench.compare import simple_classification_leaderboard
 from covidbench.metrics import (
     bootstrap_confidence_intervals,
     confusion_matrix_at_capacity,
@@ -66,6 +67,25 @@ def test_evaluate_reports_score_granularity():
     result = evaluate(y, p, capacity=0.5)
     assert result["distinct_scores"] == 2
     assert result["sensitivity_at_capacity"] == pytest.approx(1.0)
+
+
+def test_simple_classification_leaderboard_has_requested_columns():
+    payloads = [
+        {
+            "model": "logreg",
+            "metrics": {"roc_auc": 0.9, "pr_auc": 0.7, "n": 4, "capacity": 0.5},
+            "score_table": [
+                {"p": 0.9, "n": 2, "pos": 1},
+                {"p": 0.1, "n": 2, "pos": 1},
+            ],
+        }
+    ]
+    table = simple_classification_leaderboard(payloads)
+    assert list(table.columns) == [
+        "model", "roc_auc", "pr_auc", "precision", "recall", "f1_score", "support"
+    ]
+    assert table.iloc[0]["support"] == 4
+    assert table.iloc[0]["roc_auc"] == pytest.approx(0.9)
 
 
 def test_confusion_matrix_counts_reconcile_with_labels():

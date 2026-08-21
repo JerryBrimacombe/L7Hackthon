@@ -116,6 +116,10 @@ PAGE = """<!doctype html>
 
 {table}
 
+<h3>Simple classification leaderboard</h3>
+<p>This compact table combines ranking metrics with the capacity-based classification metrics. Support is the total number of people evaluated for each model.</p>
+{simple_table}
+
 <h3>Classification summary at the operating threshold</h3>
 <p>These values describe the practical trade-off at the benchmark operating point: which cases are prioritised for testing, and what proportion of people are incorrectly flagged or missed.</p>
 <p>The confusion-matrix chart uses the same operating point. “Prioritised” means selected within the testing capacity; “actual positive” means the person later tested positive. The chart is a screening-prioritisation evaluation, not a diagnosis.</p>
@@ -303,6 +307,33 @@ def classification_summary(payloads: list[dict]) -> pd.DataFrame:
     return frame.sort_values("recall", ascending=False).reset_index(drop=True)
 
 
+def simple_classification_leaderboard(payloads: list[dict]) -> pd.DataFrame:
+    """Build the compact ROC/PR/classification table requested for the report."""
+    summary = classification_summary(payloads)
+    if summary.empty:
+        return summary
+
+    metrics = pd.DataFrame(
+        [
+            {
+                "model": payload["model"],
+                "roc_auc": payload["metrics"].get("roc_auc"),
+                "pr_auc": payload["metrics"].get("pr_auc"),
+                "support": payload["metrics"].get("n"),
+            }
+            for payload in payloads
+        ]
+    )
+    compact = metrics.merge(
+        summary[["model", "precision", "recall", "f1_score"]],
+        on="model",
+        how="inner",
+    )
+    return compact[
+        ["model", "roc_auc", "pr_auc", "precision", "recall", "f1_score", "support"]
+    ].sort_values("recall", ascending=False).reset_index(drop=True)
+
+
 def explainability_summary(payloads: list[dict], top_k: int = 3) -> pd.DataFrame:
     rows: list[dict] = []
     for payload in sorted(payloads, key=lambda p: p["model"]):
@@ -361,11 +392,14 @@ def main() -> None:
     if not args.no_ci:
         frame = add_confidence_intervals(frame, primary, args.n_boot)
     board = leaderboard(frame, args.track)
+    simple_board = simple_classification_leaderboard(primary)
     summary = classification_summary(primary)
     explainability = explainability_summary(primary)
 
     print(f"=== track: {args.track} - {config.TRACKS[args.track]['label']} ===")
     print(board.to_string(index=False, float_format=lambda v: f"{v:.4f}"))
+    print("\n=== simple classification leaderboard ===")
+    print(simple_board.to_string(index=False, float_format=lambda v: f"{v:.4f}"))
 
     # Other tracks are scored on a different population, so they get their own table.
     other_tracks = sorted(
@@ -387,9 +421,12 @@ def main() -> None:
         if not args.no_ci:
             other_frame = add_confidence_intervals(other_frame, rows, args.n_boot)
         other_board = leaderboard(other_frame, track)
+        other_simple_board = simple_classification_leaderboard(rows)
         other_boards.append((track, other_board))
         print(f"\n=== track: {track} - {config.TRACKS[track]['label']} ===")
         print(other_board.to_string(index=False, float_format=lambda v: f"{v:.4f}"))
+        print("\n=== simple classification leaderboard ===")
+        print(other_simple_board.to_string(index=False, float_format=lambda v: f"{v:.4f}"))
 
     if other_boards:
         print(
@@ -430,6 +467,13 @@ def main() -> None:
         classes="dataframe small-table",
     ) if not summary.empty else "<p>No classification summary available.</p>"
 
+    simple_html = simple_board.to_html(
+        index=False,
+        float_format=lambda v: f"{v:.4f}",
+        border=0,
+        classes="dataframe small-table",
+    ) if not simple_board.empty else "<p>No simple classification leaderboard available.</p>"
+
     explainability_html = explainability.to_html(
         index=False,
         border=0,
@@ -439,12 +483,25 @@ def main() -> None:
     tracks_html = ""
     for track, other_board in other_boards:
         meta = config.TRACKS[track]
+        other_rows = [
+            p
+            for p in everything
+            if p["eval_split"] == args.eval_split and p.get("track", config.DEFAULT_TRACK) == track
+        ]
+        other_simple_html = simple_classification_leaderboard(other_rows).to_html(
+            index=False,
+            float_format=lambda v: f"{v:.4f}",
+            border=0,
+            classes="dataframe small-table",
+        )
         tracks_html += (
             f"<h3>{track} - {meta['label']}</h3>\n"
             f"<p>{meta['why']}</p>\n"
             + other_board.to_html(
                 index=False, float_format=lambda v: f"{v:.4f}", border=0, classes="dataframe small-table"
             )
+            + "<h4>Simple classification leaderboard</h4>\n"
+            + other_simple_html
             + "\n"
         )
 
@@ -484,6 +541,7 @@ def main() -> None:
         track_label=config.TRACKS[args.track]["label"],
         tracks_section=tracks_html,
         table=board.to_html(index=False, float_format=lambda v: f"{v:.4f}", border=0),
+        simple_table=simple_html,
         summary_table=summary_html,
         explainability_table=explainability_html,
         charts=charts_html,
